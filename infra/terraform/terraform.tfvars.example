@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars (git-ignored). Values come from `terraform output`
+# in infra/bootstrap and from `az account show`.
+subscription_id = "00000000-0000-0000-0000-000000000000" # TODO(owner)
+location        = "eastus"
+prefix          = "collab"
+environment     = "prod"
+
+api_client_id = "00000000-0000-0000-0000-000000000000" # TODO(owner): bootstrap output api_client_id
+
+# Entra object IDs allowed to use the hub. v1 is single-user.
+collab_principals = {
+  "00000000-0000-0000-0000-000000000000" = { alias = "owner", workspace = "main", role = "writer" } # TODO(owner)
+}
+
+deploy_principal_object_id = null # TODO(owner): bootstrap output deploy_principal_object_id
+
+# Two-step first deployment (see docs/runbook.md):
+deploy_app      = false
+container_image = ""

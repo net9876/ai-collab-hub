@@ -1,0 +1,7 @@
+# Copy to backend.hcl (git-ignored) or generate it:
+#   terraform -chdir=infra/bootstrap output -raw backend_hcl > infra/terraform/backend.hcl
+resource_group_name  = "rg-collab-tfstate"
+storage_account_name = "stcollabtfxxxxxx" # TODO(owner)
+container_name       = "tfstate"
+key                  = "ai-collab-hub/main.tfstate"
+use_azuread_auth     = true

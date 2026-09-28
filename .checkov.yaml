@@ -1,0 +1,25 @@
+# Accepted findings for v1. Each skip is justified in docs/security.md
+# ("Static analysis: accepted findings"). Review this list when the threat model
+# or budget changes.
+framework:
+  - terraform
+compact: true
+quiet: true
+skip-check:
+  - CKV_AZURE_59    # public storage endpoint: consumption ACA has no VNet/static egress; Entra-only data plane
+  - CKV2_AZURE_33   # private endpoints need a VNet-integrated environment (future phase)
+  - CKV_AZURE_33    # queue service logging: queues are not used
+  - CKV2_AZURE_20   # table read logging: reads are frequent; writes/deletes are logged
+  - CKV2_AZURE_21   # blob read logging: same rationale as table reads
+  - CKV_AZURE_206   # replication: LRS by default for cost; var.storage_replication allows ZRS/GRS
+  - CKV2_AZURE_1    # CMK needs Key Vault + key rotation; Microsoft-managed keys accepted for v1
+  - CKV_AZURE_43    # storage name is computed with substr(); checkov cannot evaluate it
+  - CKV_AZURE_249   # OIDC subject is pinned to repo + environment; checkov cannot evaluate the interpolation
+  - CKV_AZURE_139   # ACR public network: Basic SKU has no private endpoints; admin user off, AAD-only
+  - CKV_AZURE_163   # ACR vulnerability scanning: Defender for Containers is a paid add-on
+  - CKV_AZURE_164   # ACR content trust: Premium-only
+  - CKV_AZURE_165   # ACR geo-replication: Premium-only, single region by design
+  - CKV_AZURE_166   # ACR quarantine: Premium-only
+  - CKV_AZURE_167   # ACR retention policy: Premium-only
+  - CKV_AZURE_233   # ACR zone redundancy: Premium-only
+  - CKV_AZURE_237   # ACR dedicated data endpoints: Premium-only

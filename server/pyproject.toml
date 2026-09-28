@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "collab-hub"
+version = "0.1.0"
+description = "Shared memory, decisions, tasks and messages for AI agents, exposed as a remote MCP server."
+requires-python = ">=3.12"
+dependencies = [
+  "mcp>=2.2,<3",
+  "azure-data-tables>=12.7,<13",
+  "azure-storage-blob>=12.30,<13",
+  "azure-identity>=1.25,<2",
+  "aiohttp>=3.10,<4",
+  "pyjwt[crypto]>=2.10,<3",
+  "python-ulid>=3,<5",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "uvicorn>=0.35",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9",
+  "pytest-asyncio>=1",
+  "ruff>=0.16",
+  "mypy>=2",
+]
+
+[project.scripts]
+collab-hub = "collab_hub.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+markers = [
+  "integration: needs the Azurite emulator (started automatically by conftest)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = ["S101", "UP046"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S311"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
+check_untyped_defs = true

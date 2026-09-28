@@ -1,0 +1,80 @@
+name: deploy
+
+# Manual only. Builds the image, pushes it to ACR and rolls the Container App
+# to the new image. Azure access uses GitHub OIDC (no stored Azure secret);
+# the deploy identity holds only AcrPush on the registry, Container Apps
+# Contributor on the app and Managed Identity Operator on the app identity.
+#
+# Required (Settings > Environments > production):
+#   secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   variables: ACR_NAME, RESOURCE_GROUP, CONTAINER_APP
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy"
+        required: false
+        default: main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image
+        id: image
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          set -euo pipefail
+          tag="$(git rev-parse --short=12 HEAD)"
+          image="${ACR_NAME}.azurecr.io/collab-hub:${tag}"
+          az acr login --name "$ACR_NAME"
+          docker build -t "$image" server
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Roll Container App to the new image
+        env:
+          RG: ${{ vars.RESOURCE_GROUP }}
+          APP: ${{ vars.CONTAINER_APP }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          az containerapp update --name "$APP" --resource-group "$RG" --image "$IMAGE" --output none
+          fqdn="$(az containerapp show --name "$APP" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)"
+          echo "FQDN=$fqdn" >> "$GITHUB_ENV"
+
+      - name: Smoke test (health + auth required)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS "https://${FQDN}/healthz" >/dev/null; then break; fi
+            sleep 5
+          done
+          curl -fsS "https://${FQDN}/healthz"
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://${FQDN}/mcp" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')"
+          test "$code" = "401" || { echo "expected 401 without token, got $code"; exit 1; }
+          echo "OK: healthy, and /mcp rejects unauthenticated calls"

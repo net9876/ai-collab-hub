@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install Azurite (Blob + Table emulator)
+        run: npm install --prefix .tools --no-audit --no-fund azurite@3.37.0
+      - name: Install server
+        run: python -m pip install -e "server[dev]"
+      - name: ruff
+        working-directory: server
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: mypy
+        working-directory: server
+        run: mypy src
+      - name: pytest (Azurite + real MCP over HTTP)
+        working-directory: server
+        run: python -m pytest -q tests
+
+  terraform:
+    name: terraform (fmt, validate, checkov)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: fmt
+        run: terraform fmt -check -recursive infra
+      - name: validate
+        run: |
+          for d in infra/bootstrap infra/terraform; do
+            terraform -chdir=$d init -backend=false -input=false
+            terraform -chdir=$d validate
+          done
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: checkov
+        run: |
+          python -m pip install --quiet checkov
+          checkov -d infra --config-file .checkov.yaml
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: private-ID / secret scan (tracked files)
+        run: python scripts/scan_secrets.py
+      - name: gitleaks (full history)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            git /repo --config /repo/.gitleaks.toml --no-banner --redact
+
+  image:
+    name: container build (no push)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: docker build
+        run: docker build -t collab-hub:ci server
+      - name: container starts and fails closed without config
+        run: |
+          # Without COLLAB_* settings the app must refuse to start (no anonymous mode).
+          if docker run --rm collab-hub:ci python -c "from collab_hub.config import Settings; Settings()"; then
+            echo "expected configuration error"; exit 1
+          fi

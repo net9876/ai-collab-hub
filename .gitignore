@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+
+# Terraform: never commit state, plans or local variable files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+plan.out
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+backend.hcl
+!backend.hcl.example
+
+# Local-only profile and preferences (may contain personal context)
+shared/PROFILE.md
+shared/PREFERENCES.md
+
+# Client links created by scripts/connect-*.ps1
+.claude/skills/
+.agents/skills/
+.claude/settings.local.json
+.codex/
+.mcp.json
+
+# Local emulator data, secrets and tokens
+__azurite_db_*
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+.azurite/
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+local-state/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+node_modules/
+
+# Local tool installs (scripts/setup.ps1)
+.tools/
+
+# Written by scripts/connect-*.ps1
+.collab/
+.collab.local.json
+*.bak-*
