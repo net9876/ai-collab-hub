@@ -111,6 +111,13 @@ resource "azuread_application" "api" {
       user_consent_description   = "Create and update your AI Collab Hub records."
     }
   }
+
+  # The URI is managed by azuread_application_identifier_uri below (it needs the
+  # client ID, which exists only after creation). Without this, every plan would
+  # try to remove it and break token issuance.
+  lifecycle {
+    ignore_changes = [identifier_uris]
+  }
 }
 
 resource "azuread_application_identifier_uri" "api" {
