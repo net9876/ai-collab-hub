@@ -6,8 +6,8 @@
   Default (project scope; nothing outside this repository changes):
     * .collab.local.json     MCP URL, API scope, tenant (git-ignored)
     * .codex/config.toml     [mcp_servers.collab] with http_headers_helper, which
-                             runs scripts/mcp-headers.ps1 to get a fresh Entra
-                             token from `az` on each connection (git-ignored).
+                             runs scripts/mcp-headers.cmd: a cached Entra token
+                             from `az`, refreshed in the background (git-ignored).
                              Codex reads project config only for trusted projects:
                              open C:\AI\collab as a project in Codex and trust it.
     * .agents/skills/<name>  junctions to skills/<name> (git-ignored)
@@ -51,12 +51,11 @@ if ($UserSkills -and $PSCmdlet.ShouldProcess('~/.agents/skills', 'link repo skil
     New-SkillLinks (Join-Path $HOME '.agents\skills') $manifest $log
 }
 
-# pwsh if available, else Windows PowerShell; the helper is compatible with both.
-$shell = 'powershell'
-if (Get-Command pwsh -ErrorAction SilentlyContinue) { $shell = 'pwsh' }
-$helper = Join-Path $Root 'scripts\mcp-headers.ps1'
+# Fast cached helper: Codex kills header helpers after 10 seconds, and
+# PowerShell + az can take longer (see scripts/mcp-headers.cmd).
+$helper = Join-Path $Root 'scripts\mcp-headers.cmd'
 # TOML literal string ('...'): backslashes and double quotes need no escaping.
-$helperCmd = "$shell -NoProfile -ExecutionPolicy Bypass -File `"$helper`" -Agent codex"
+$helperCmd = "`"$helper`" codex"
 
 $block = @"
 

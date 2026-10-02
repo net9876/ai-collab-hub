@@ -99,8 +99,10 @@ developers.openai.com/codex/mcp), /docs/build-skills.md,
   refreshed once after a 401/403; explicit bearer tokens and OAuth take
   precedence over a helper `Authorization`), `startup_timeout_sec`,
   `enabled_tools`, `disabled_tools`. **Used by `scripts/connect-codex.ps1`**
-  (`http_headers_helper` → `scripts/mcp-headers.ps1 -Agent codex`). Checked
-  2026-10-01.
+  (`http_headers_helper` → `scripts/mcp-headers.cmd codex`). Checked
+  2026-10-01. Observed in Codex Desktop 26.917 logs: the helper is killed
+  after **10 seconds** ("MCP HTTP headers helper timed out after 10 seconds"),
+  same limit as Claude Code, hence the cached `.cmd` helper.
 - OAuth: `codex mcp add ... --oauth-client-id` (static client),
   `codex mcp login` (CIMD, DCR fallback).
 - AGENTS.md: concatenated from git root down to cwd, 32 KiB default cap; no
