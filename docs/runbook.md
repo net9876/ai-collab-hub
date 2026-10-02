@@ -37,14 +37,21 @@ with a federated credential.
 on the laptop):
 
 ```powershell
-terraform "-chdir=infra/bootstrap" output -raw backend_hcl | Out-File -Encoding ascii infra/terraform/backend.hcl
+cd infra/bootstrap
+$hcl = terraform output -raw backend_hcl
+$hcl | Set-Content ../terraform/backend.hcl -Encoding ascii
 # bootstrap's own backend: same account, different key
-(Get-Content infra/terraform/backend.hcl) -replace 'main.tfstate','bootstrap.tfstate' | Out-File -Encoding ascii infra/bootstrap/backend.hcl
-Add-Content infra/bootstrap/versions.tf "`nterraform {`n  backend `"azurerm`" {}`n}"   # or edit by hand
-terraform "-chdir=infra/bootstrap" init -migrate-state "-backend-config=backend.hcl"
+($hcl -replace 'main\.tfstate','bootstrap.tfstate') | Set-Content backend.hcl -Encoding ascii
+# backend block in a git-ignored override file, so a fresh clone can still bootstrap locally
+"terraform {`n  backend `"azurerm`" {}`n}" | Set-Content backend_override.tf -Encoding ascii
+terraform init -migrate-state -force-copy "-backend-config=backend.hcl"
+terraform plan        # expect: No changes
+Remove-Item terraform.tfstate, terraform.tfstate.backup   # the remote copy is now authoritative
+cd ../..
 ```
 
-(Keep that `backend "azurerm" {}` edit local or commit it — it contains no IDs.)
+`backend.hcl` and `backend_override.tf` are git-ignored; recreate them on a
+new machine from the values above (they contain no secrets).
 
 ## 2. Main stack, step 1 (everything except the Container App)
 

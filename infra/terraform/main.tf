@@ -218,6 +218,14 @@ resource "azurerm_container_app_environment" "this" {
   logs_destination           = "log-analytics"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = local.tags
+
+  # Azure now creates environments with the serverless "Consumption" workload
+  # profile by default; declare it so plans do not try to remove it. No cost
+  # by itself (billed per app usage, scale to zero).
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
 }
 
 locals {
@@ -248,6 +256,7 @@ resource "azurerm_container_app" "this" {
   resource_group_name          = azurerm_resource_group.this.name
   container_app_environment_id = azurerm_container_app_environment.this.id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
   tags                         = local.tags
 
   identity {
