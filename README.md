@@ -55,14 +55,14 @@ Container App needs an image in the registry the stack creates) → smoke test �
 | Client | v1 | How |
 |---|---|---|
 | Claude Code | yes | `.mcp.json` HTTP server + `headersHelper` getting an Entra token from `az` |
-| Codex CLI | configured, not yet exercised (Codex not installed here) | `.codex/config.toml` + `bearer_token_env_var`, launched via `scripts/codex-collab.ps1` |
+| Codex (ChatGPT desktop app or CLI) | configured | project `.codex/config.toml` with `http_headers_helper` (same `az` token helper); open the repo as a trusted project |
 | Claude Desktop / claude.ai | no | Connectors need OAuth DCR/CIMD; Entra supports neither |
 | ChatGPT | no | Same limitation; see `docs/connect-chatgpt.md` for the exact blocker and the path to connect later |
 
 ## Limits worth knowing
 
 - Tokens come from your Azure CLI login and last ~60–90 minutes; Claude Code
-  refreshes on reconnect, Codex on restart via the wrapper script.
+  and Codex both re-run the header helper on reconnect.
 - The agent label (`X-Collab-Agent`) is self-declared; the user identity is
   verified.
 - Search is keyword/metadata matching over Azure Table, not full-text search.

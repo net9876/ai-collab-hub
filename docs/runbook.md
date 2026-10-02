@@ -111,7 +111,8 @@ $tenant = az account show --query tenantId -o tsv
 pwsh -File scripts/connect-claude.ps1 -McpUrl $url -ApiScope $scope -TenantId $tenant
 claude mcp list                          # expect: collab ... connected (approve the trust prompt)
 pwsh -File scripts/connect-codex.ps1     # reuses .collab.local.json
-pwsh -File scripts/codex-collab.ps1      # starts Codex with a fresh token; /mcp to check
+# Codex in the ChatGPT desktop app: open C:\AI\collab as a project, trust it,
+# check Settings > MCP servers (collab). Codex CLI: run `codex` here, then /mcp.
 ```
 
 Both scripts change only git-ignored files in the repo by default and record
