@@ -93,18 +93,24 @@ developers.openai.com/codex/mcp), /docs/build-skills.md,
 
 - `~/.codex/config.toml`; project `.codex/config.toml` is read **only for
   trusted projects**.
-- `[mcp_servers.<name>]`: `url`, `bearer_token_env_var`, `http_headers`,
-  `env_http_headers`, `enabled_tools`, `disabled_tools`. **Used by
-  `scripts/connect-codex.ps1`** (`bearer_token_env_var = "COLLAB_MCP_TOKEN"`).
+- `[mcp_servers.<name>]`: `url`, `auth`, `bearer_token_env_var`,
+  `http_headers`, `env_http_headers`, **`http_headers_helper`** (a string
+  command that prints a JSON object of headers; cached per connection,
+  refreshed once after a 401/403; explicit bearer tokens and OAuth take
+  precedence over a helper `Authorization`), `startup_timeout_sec`,
+  `enabled_tools`, `disabled_tools`. **Used by `scripts/connect-codex.ps1`**
+  (`http_headers_helper` → `scripts/mcp-headers.ps1 -Agent codex`). Checked
+  2026-10-01.
 - OAuth: `codex mcp add ... --oauth-client-id` (static client),
   `codex mcp login` (CIMD, DCR fallback).
 - AGENTS.md: concatenated from git root down to cwd, 32 KiB default cap; no
   import syntax, so our `AGENTS.md` tells Codex which files to read.
 - Skills: `.agents/skills` (repo, cwd up to root), `$HOME/.agents/skills`;
   `SKILL.md` requires `name` and `description`.
-- Whether the Codex **App** shares the CLI config: **UNVERIFIED**.
-- Codex is **not installed** on the machine this was built on, so the Codex
-  connection is configured but not exercised end to end.
+- The ChatGPT desktop app's Codex uses `~/.codex/config.toml` and has
+  Settings > MCP servers > Add server (docs, checked 2026-10-01; also seen
+  locally: the app writes `[projects.'<path>'] trust_level = "trusted"` there).
+- The `codex` CLI is not on PATH on the build machine; the app is used instead.
 
 ## ChatGPT
 
