@@ -33,8 +33,18 @@ this page).
 - **Token source for v1 clients:** the user's Azure CLI login
   (`az account get-access-token --scope api://<client-id>/Collab.ReadWrite`).
   Azure CLI is pre-authorized on the API app so no consent prompt is needed.
-  Tokens live ~60–90 minutes and are fetched per connection; nothing is
-  stored on disk by our scripts (the Azure CLI keeps its own token cache).
+  Tokens live ~60–90 minutes.
+- **Local token cache.** Claude Code and Codex kill header helpers after 10
+  seconds, and PowerShell + `az` can take far longer on a loaded machine. The
+  helper they run (`scripts/mcp-headers.cmd`) therefore only prints a cached
+  header file from `%LOCALAPPDATA%\ai-collab-hub` (ACL: current user only,
+  inheritance removed). The cache holds one access token for this hub's
+  audience only, never a refresh token, and is renewed by
+  `mcp-headers.ps1 -Refresh` — run by the optional per-user scheduled task from
+  `scripts/token-refresh-task.ps1` (every 5 min, `-Uninstall` removes it) or by
+  hand. Anyone able to read your profile can already use the Azure CLI's own,
+  more powerful cache, so this adds little exposure; delete the folder to
+  revoke locally.
 - **Why not interactive OAuth in the client?** Entra supports neither DCR nor
   CIMD, and only accepts the RFC 8707 `resource` value if the MCP URL is an
   Application ID URI on a verified custom domain. Claude Code/Codex can use

@@ -56,14 +56,13 @@ if ($PSCmdlet.ShouldProcess($mcpPath, 'add collab MCP server')) {
         $existing = Get-Content $mcpPath -Raw | ConvertFrom-Json
         foreach ($p in $existing.mcpServers.PSObject.Properties) { $doc.mcpServers[$p.Name] = $p.Value }
     }
-    # pwsh if available, else Windows PowerShell; the helper is compatible with both.
-    $shell = 'powershell'
-    if (Get-Command pwsh -ErrorAction SilentlyContinue) { $shell = 'pwsh' }
-    $helper = Join-Path $Root 'scripts\mcp-headers.ps1'
+    # Fast cached helper: Claude Code kills header helpers after 10 seconds, and
+    # PowerShell + az can take longer (see scripts/mcp-headers.cmd).
+    $helper = Join-Path $Root 'scripts\mcp-headers.cmd'
     $doc.mcpServers['collab'] = [ordered]@{
         type          = 'http'
         url           = $cfg.mcp_url
-        headersHelper = "$shell -NoProfile -ExecutionPolicy Bypass -File `"$helper`" -Agent claude-code"
+        headersHelper = "`"$helper`" claude-code"
     }
     $doc | ConvertTo-Json -Depth 6 | Set-Content $mcpPath -Encoding UTF8
     Write-Host "  wrote $mcpPath"
