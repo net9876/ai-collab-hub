@@ -66,27 +66,56 @@ function Initialize-CacheDir {
 
 if ($Refresh) {
     Initialize-CacheDir
+    # Outcome log for the scheduled task (conhost always reports exit code 0).
+    # Timestamps and outcomes only; never tokens.
+    $logFile = Join-Path $cacheDir 'refresh.log'
+    function Write-RefreshLog([string]$Message) {
+        $line = '{0:u} pid={1} {2}' -f (Get-Date).ToUniversalTime(), $PID, $Message
+        $old = @(); if (Test-Path $logFile) { $old = @(Get-Content $logFile -Tail 199) }
+        Set-Content -Path $logFile -Value ($old + $line) -Encoding UTF8
+    }
     $tokenFile = Join-Path $cacheDir 'token.json'
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     if (Test-Path $tokenFile) {
         try {
             $cached = Get-Content $tokenFile -Raw | ConvertFrom-Json
-            if (([int64]$cached.e - $now) -gt 1500) { exit 0 }   # > 25 min left
+            $left = [int64]$cached.e - $now
+            if ($left -gt 1500) { Write-RefreshLog "skip: cached token valid $([int]($left / 60)) min"; exit 0 }
         } catch { }
     }
     # One refresher at a time; a lock older than 2 minutes is considered stale.
     $lock = Join-Path $cacheDir 'refresh.lock'
-    if ((Test-Path $lock) -and ((Get-Item $lock).LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddMinutes(-2))) { exit 0 }
+    if ((Test-Path $lock) -and ((Get-Item $lock).LastWriteTimeUtc -gt (Get-Date).ToUniversalTime().AddMinutes(-2))) {
+        Write-RefreshLog 'skip: another refresh is running'; exit 0
+    }
     Set-Content -Path $lock -Value $PID
     try {
-        $tok = Get-AzToken (Get-Config)
+        $cfg = Get-Config
+        $azArgs = @('account', 'get-access-token', '--scope', $cfg.api_scope,
+            '--query', '{t:accessToken, e:expires_on}', '-o', 'json')
+        if ($cfg.tenant_id) { $azArgs += @('--tenant', $cfg.tenant_id) }
+        $errFile = Join-Path $cacheDir "az-$PID.err"
+        $raw = (& az @azArgs 2>$errFile) -join ''
+        if ($LASTEXITCODE -ne 0 -or -not $raw) {
+            $err = ''
+            if (Test-Path $errFile) { $err = ((Get-Content $errFile -Raw) -replace '\s+', ' ').Trim() }
+            $azCmd = Get-Command az -ErrorAction SilentlyContinue
+            $azSource = if ($azCmd) { $azCmd.Source } else { 'not found on PATH' }
+            Write-RefreshLog "FAIL: az exit=$LASTEXITCODE az=$azSource err=$($err.Substring(0, [Math]::Min(300, $err.Length)))"
+            exit 3
+        }
+        $tok = $raw | ConvertFrom-Json
         foreach ($a in $agents) {
             $h = [ordered]@{ Authorization = "Bearer $($tok.t)"; 'X-Collab-Agent' = $a }
             Write-Atomic (Join-Path $cacheDir "headers-$a.json") ($h | ConvertTo-Json -Compress)
         }
         Write-Atomic $tokenFile (@{ e = [int64]$tok.e } | ConvertTo-Json -Compress)  # expiry only
+        Write-RefreshLog "ok: refreshed, valid $([int](([int64]$tok.e - $now) / 60)) min"
+    } catch {
+        Write-RefreshLog "FAIL: $($_.Exception.GetType().Name): $($_.Exception.Message)"
+        throw
     } finally {
-        Remove-Item $lock -ErrorAction SilentlyContinue
+        Remove-Item $lock, $errFile -ErrorAction SilentlyContinue
     }
     exit 0
 }
