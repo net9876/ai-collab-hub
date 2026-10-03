@@ -138,7 +138,10 @@ def resolve_principal(settings: Settings, headers: Mapping[str, str] | None) -> 
     grant: PrincipalGrant | None = settings.principals.get(token.subject)
     if grant is None:
         raise HubError("forbidden", "principal is not allowed")
-    agent = "other"
+    # Hub-issued OAuth tokens carry the agent derived from the client's redirect
+    # host (chatgpt.com -> chatgpt, claude.ai -> claude-desktop); a header wins.
+    claimed = (token.claims or {}).get("agent")
+    agent = claimed if claimed in KNOWN_AGENTS else "other"
     if headers:
         raw = (headers.get(AGENT_HEADER) or "").strip().lower()
         if raw and _AGENT_RE.match(raw) and raw in KNOWN_AGENTS:

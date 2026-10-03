@@ -254,6 +254,30 @@ class HubService:
             {"slug": slug, "name": name, "purpose": purpose},
         )
 
+    async def project_update(
+        self,
+        p: Principal,
+        slug: str,
+        expected_revision: int,
+        name: str | None,
+        purpose: str | None,
+        status: str | None,
+    ) -> Project:
+        require(self.s, p, write=True)
+        row = await self._require_project(p, slug)
+        if name is not None:
+            row["name"] = name
+        if purpose is not None:
+            row["purpose"] = purpose
+        change = "updated"
+        if status is not None and status != row["status"]:
+            row["status"] = status
+            change = f"status -> {status}"
+        row["search_text"] = normalize(f"{slug} {row['name']} {row['purpose']}")
+        rev = await self._save(p, "project", slug, row, change, expected_revision)
+        row.update(revision=rev, updated_by=p.actor)
+        return self._project(row)
+
     def _project(self, row: dict[str, Any]) -> Project:
         return Project(
             slug=row["slug"],

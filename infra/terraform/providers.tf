@@ -1,3 +1,5 @@
+provider "azuread" {}
+
 provider "azurerm" {
   subscription_id = var.subscription_id
   # Data-plane operations (containers, tables) use Entra ID: the storage

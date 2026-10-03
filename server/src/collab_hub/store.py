@@ -153,6 +153,11 @@ class Store:
         self.table = self._tables.get_table_client(settings.table_name)
         self.container = self._blobs.get_container_client(settings.blob_container)
 
+    @property
+    def credential(self) -> Any:
+        """The Entra credential (managed identity in Azure); None with a connection string."""
+        return self._credential
+
     async def ensure_created(self) -> None:
         """Create table/container if missing (local dev; Terraform owns them in Azure)."""
         try:
@@ -182,6 +187,52 @@ class Store:
         row = dict(ent)
         row["_etag"] = ent.metadata["etag"]
         return row
+
+    @storage_errors
+    async def create(self, entity: dict[str, Any]) -> None:
+        """Insert one row; HubError('conflict') if it exists."""
+        try:
+            await self.table.create_entity(entity)
+        except ResourceExistsError as exc:
+            raise HubError("conflict", "row already exists") from exc
+
+    @storage_errors
+    async def consume(self, pk: str, rk: str, etag: str) -> bool:
+        """Atomically mark a single-use row as used (If-Match on its ETag).
+
+        Exactly one concurrent caller gets True. delete_entity cannot do this: the
+        SDK treats a 404 on delete as success, so two racers would both "win".
+        """
+        try:
+            await self.table.update_entity(
+                {"PartitionKey": pk, "RowKey": rk, "used": True},
+                mode=UpdateMode.MERGE,
+                etag=etag,
+                match_condition=MatchConditions.IfNotModified,
+            )
+            return True
+        except ResourceNotFoundError:
+            return False
+        except HttpResponseError as exc:
+            if exc.status_code in (404, 412):
+                return False
+            raise
+
+    @storage_errors
+    async def delete(self, pk: str, rk: str) -> None:
+        """Delete one row; missing rows are ignored."""
+        await self.table.delete_entity(pk, rk)
+
+    @storage_errors
+    async def count(self, pk: str, limit: int) -> int:
+        n = 0
+        async for _ in self.table.query_entities(
+            "PartitionKey eq @pk", parameters={"pk": pk}, select=["RowKey"], results_per_page=100
+        ):
+            n += 1
+            if n >= limit:
+                break
+        return n
 
     @storage_errors
     async def transact(self, ops: list[tuple[str, dict[str, Any], str | None]]) -> None:

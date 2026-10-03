@@ -247,7 +247,79 @@ locals {
     COLLAB_PRINCIPALS                 = local.principals_json
     COLLAB_PUBLIC_URL                 = "https://${local.app_fqdn}"
     COLLAB_LOG_LEVEL                  = "INFO"
+    COLLAB_OAUTH_ENABLED              = tostring(var.enable_oauth)
+    COLLAB_OAUTH_LOGIN_CLIENT_ID      = var.enable_oauth ? azuread_application.login[0].client_id : ""
   }
+}
+
+# ---------------------------------------------------------------------------
+# OAuth for remote connectors (ChatGPT, Claude.ai / Desktop). The hub is the
+# OAuth authorization server (DCR + PKCE) and delegates user sign-in to this
+# Entra app. The app authenticates to Entra with the Container App's managed
+# identity (federated identity credential): no client secret, no Key Vault.
+# ---------------------------------------------------------------------------
+
+data "azuread_client_config" "current" {}
+
+data "azuread_service_principal" "graph" {
+  count     = var.enable_oauth ? 1 : 0
+  client_id = "00000003-0000-0000-c000-000000000000" # Microsoft Graph
+}
+
+locals {
+  graph_openid_scope_id = "37f7f235-527c-4136-accd-4a02d197296e" # Graph delegated 'openid'
+}
+
+resource "azuread_application" "login" {
+  count            = var.enable_oauth ? 1 : 0
+  display_name     = "ai-collab-hub-login"
+  sign_in_audience = "AzureADMyOrg"
+  owners           = [data.azuread_client_config.current.object_id]
+
+  web {
+    redirect_uris = ["https://${local.app_fqdn}/oauth/callback"]
+  }
+
+  required_resource_access {
+    resource_app_id = "00000003-0000-0000-c000-000000000000"
+    resource_access {
+      id   = local.graph_openid_scope_id
+      type = "Scope"
+    }
+  }
+}
+
+resource "azuread_service_principal" "login" {
+  count                        = var.enable_oauth ? 1 : 0
+  client_id                    = azuread_application.login[0].client_id
+  app_role_assignment_required = true # only assigned users can sign in
+  owners                       = [data.azuread_client_config.current.object_id]
+}
+
+resource "azuread_app_role_assignment" "login_users" {
+  for_each            = var.enable_oauth ? var.collab_principals : {}
+  app_role_id         = "00000000-0000-0000-0000-000000000000" # default access
+  principal_object_id = each.key
+  resource_object_id  = azuread_service_principal.login[0].object_id
+}
+
+# Pre-consent 'openid' for the allowed users so sign-in shows no consent prompt.
+resource "azuread_service_principal_delegated_permission_grant" "login_openid" {
+  for_each                             = var.enable_oauth ? var.collab_principals : {}
+  service_principal_object_id          = azuread_service_principal.login[0].object_id
+  resource_service_principal_object_id = data.azuread_service_principal.graph[0].object_id
+  claim_values                         = ["openid"]
+  user_object_id                       = each.key
+}
+
+resource "azuread_application_federated_identity_credential" "login_mi" {
+  count          = var.enable_oauth ? 1 : 0
+  application_id = azuread_application.login[0].id
+  display_name   = "container-app-managed-identity"
+  description    = "The hub's user-assigned managed identity acts as this app's credential."
+  audiences      = ["api://AzureADTokenExchange"]
+  issuer         = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
+  subject        = azurerm_user_assigned_identity.app.principal_id
 }
 
 resource "azurerm_container_app" "this" {

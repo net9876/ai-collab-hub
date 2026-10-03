@@ -44,6 +44,23 @@ class Settings(BaseSettings):
     authorization_servers: str | None = None  # advertised in RFC 9728 metadata
     principals: dict[str, PrincipalGrant] = Field(default_factory=dict)
 
+    # --- OAuth authorization server for ChatGPT / Claude.ai connectors --------
+    # The hub becomes an OAuth AS (DCR + PKCE) whose user sign-in is delegated to
+    # Entra ID through a separate "login" app registration. Entra JWTs (Claude
+    # Code / Codex via az) keep working alongside the hub's own opaque tokens.
+    oauth_enabled: bool = False
+    oauth_login_client_id: str | None = None  # Entra app used for user sign-in
+    oauth_redirect_allowlist: str = (
+        "https://claude.ai/api/mcp/auth_callback,"
+        "https://claude.com/api/mcp/auth_callback,"
+        "https://chatgpt.com/connector_platform_oauth_redirect,"
+        "https://chatgpt.com/connector/oauth/*,"
+        "http://localhost:*,http://127.0.0.1:*"
+    )
+    oauth_access_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
+    oauth_refresh_ttl_seconds: int = Field(default=30 * 86400, ge=3600, le=90 * 86400)
+    oauth_max_clients: int = Field(default=200, ge=1, le=10000)
+
     # --- http --------------------------------------------------------------
     public_url: str = "http://127.0.0.1:8000"
     allowed_hosts: str = ""  # comma separated; defaults to the public_url host
@@ -67,7 +84,13 @@ class Settings(BaseSettings):
             raise ValueError("set COLLAB_TENANT_ID or COLLAB_OIDC_JWKS_URL")
         if not self.principals:
             raise ValueError("COLLAB_PRINCIPALS is empty: nobody could use the server")
+        if self.oauth_enabled and not self.oauth_login_client_id:
+            raise ValueError("COLLAB_OAUTH_ENABLED needs COLLAB_OAUTH_LOGIN_CLIENT_ID")
         return self
+
+    @property
+    def redirect_allowlist(self) -> list[str]:
+        return [p.strip() for p in self.oauth_redirect_allowlist.split(",") if p.strip()]
 
     @property
     def issuer(self) -> str | None:

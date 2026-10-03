@@ -61,6 +61,12 @@ variable "collab_principals" {
   }
 }
 
+variable "enable_oauth" {
+  description = "Run the hub's OAuth authorization server for ChatGPT / Claude.ai connectors (Entra sign-in, no secrets)."
+  type        = bool
+  default     = true
+}
+
 variable "deploy_principal_object_id" {
   description = "Object ID of the GitHub OIDC deploy service principal (bootstrap output). Null = no CI deploy roles."
   type        = string

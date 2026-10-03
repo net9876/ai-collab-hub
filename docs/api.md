@@ -36,6 +36,7 @@ Exact JSON schemas are served by `tools/list`; this page is the overview.
 | Tool | Access | Purpose |
 |---|---|---|
 | `project_create(slug, name, purpose, idempotency_key?)` | write | Register a project card. Only on user request. |
+| `project_update(slug, expected_revision, name?, purpose?, status?)` | write | Edit a card or set status `active`/`paused`/`archived`; history kept. |
 | `project_list(status?, limit, cursor?)` | read | Find project slugs. |
 | `project_get_context(project)` | read | Card + ≤10 decisions (not superseded) + ≤20 open/in-progress/blocked tasks + ≤10 active memories + your unread count. |
 | `memory_add(project, title, body, tags?, verified?, sources?, idempotency_key?)` | write | New memory (body in Blob). |
@@ -56,8 +57,15 @@ Exact JSON schemas are served by `tools/list`; this page is the overview.
 | `message_reply(message_id, body, idempotency_key?)` | write | Reply in thread to the sender's agent. |
 | `message_mark_read(message_ids[1..50])` | write | Idempotent; only for messages addressed to you. |
 
-`project_create` is the one tool beyond the requested list: without it no
-project could exist, and every other write validates the project slug.
+`project_create` and `project_update` go beyond the originally requested list:
+without them no project could exist or be retired, and every other write
+validates the project slug.
+
+## OAuth endpoints (connectors)
+
+`/.well-known/oauth-authorization-server`, `/register` (DCR), `/authorize`,
+`/token`, `/revoke`, plus `/oauth/callback` (Entra return) and `/oauth/approve`
+(consent form). See `docs/connect-chatgpt.md`.
 
 ## Task state machine
 

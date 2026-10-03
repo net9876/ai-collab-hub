@@ -37,9 +37,10 @@ EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 PUBLIC_GUIDS = {
     "04b07795-8ddb-461a-bbee-02f9e1bf7b46",  # Azure CLI public client ID
+    "37f7f235-527c-4136-accd-4a02d197296e",  # Microsoft Graph delegated 'openid' scope ID
 }
 EMAIL_OK = re.compile(
-    r"(noreply@anthropic\.com|@example\.(com|test|org)|@users\.noreply\.github\.com)$"
+    r"(noreply@anthropic\.com|@example\.(com|test|org)|\.example$|@users\.noreply\.github\.com)$"
 )
 SKIP_SUFFIXES = {".lock.hcl", ".png", ".jpg", ".ico"}
 

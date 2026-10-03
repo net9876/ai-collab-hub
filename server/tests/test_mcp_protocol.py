@@ -10,6 +10,7 @@ from .conftest import AUDIENCE, OWNER, READER, STRANGER, error_text, payload
 
 EXPECTED_TOOLS = {
     "project_create",
+    "project_update",
     "project_list",
     "project_get_context",
     "memory_add",

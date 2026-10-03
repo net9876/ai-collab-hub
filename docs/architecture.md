@@ -102,10 +102,23 @@ a cold start (a few seconds; the startup probe allows 60 s). The server is
 stateless (`stateless_http=True`, JSON responses), so any replica can serve
 any request and clients do not depend on sticky sessions.
 
+## Two ways in: CLI clients and connectors
+
+- **Claude Code, Codex** (on the laptop): Entra access token from the Azure CLI,
+  served by `scripts/mcp-headers.cmd` from a local cache that a scheduled task
+  refreshes (both clients kill header helpers after 10 s).
+- **ChatGPT, Claude.ai / Desktop** (vendor clouds): the hub's own OAuth server —
+  DCR, PKCE, Entra sign-in through the `ai-collab-hub-login` app (managed-identity
+  credential), consent page, opaque hub tokens. Details:
+  `docs/connect-chatgpt.md`, controls: `docs/security.md`.
+
+Both end in the same `Principal` (verified Entra `oid` → alias/workspace/role)
+and the same per-tool authorization.
+
 ## Deliberately not in v1
 
 - No shell, command execution, file paths, GitHub token proxy or access from
   Azure to the laptop. Tools are typed CRUD only.
 - No agent-to-agent auto-invocation: messages and tasks never trigger work.
-- No ChatGPT / Claude.ai connector (needs a DCR/CIMD-capable auth layer).
 - No private networking (would need a VNet-integrated environment).
+- No per-agent Entra identity, no bulk export/backup tool, no semantic search.
