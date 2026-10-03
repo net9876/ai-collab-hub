@@ -449,3 +449,20 @@ async def test_failed_transaction_leaves_no_blob(open_client, mint, hub_app):
     finally:
         await check.close()
     assert names == []
+
+
+async def test_project_update_archives_with_history(open_client, mint):
+    async with open_client(mint()) as c:
+        proj = await new_project(c)
+        res = payload(
+            await c.call_tool(
+                "project_update", {"slug": proj, "expected_revision": 1, "status": "archived"}
+            )
+        )
+        assert res["status"] == "archived" and res["revision"] == 2
+        stale = await c.call_tool(
+            "project_update", {"slug": proj, "expected_revision": 1, "name": "Late edit"}
+        )
+        assert "conflict" in error_text(stale)
+        active = payload(await c.call_tool("project_list", {"status": "active", "limit": 50}))
+        assert proj not in {p["slug"] for p in active["items"]}

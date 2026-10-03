@@ -82,8 +82,9 @@ https://claude.com/docs/connectors/building/authentication
   2025-03-26 / 2025-06-18 / 2025-11-25.
 - `claude_desktop_config.json` configures **local stdio** servers only; it is
   separate from Connectors and from Claude Code's `.mcp.json` / `~/.claude.json`.
-- **Status:** not connected in v1 (Entra cannot serve DCR/CIMD). Same fix path
-  as ChatGPT.
+- **Status (2026-10-03):** supported through the hub's own OAuth server (DCR;
+  Entra sign-in behind it). Redirect URIs on the allowlist:
+  `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`.
 
 ## Codex CLI / App
 
@@ -132,7 +133,10 @@ https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
   Plan availability and GA status: **UNVERIFIED**. It solves *reachability* of
   private servers, not authentication; our server is already public, so it adds
   nothing for v1.
-- **Status:** not connected. See `docs/connect-chatgpt.md`.
+- **Status (2026-10-03):** supported through the hub's own OAuth server (DCR,
+  PKCE, `resource`, RFC 9207 `iss`). Both ChatGPT redirect forms are on the
+  allowlist. Plan-specific limits (write tools) are decided by ChatGPT. See
+  `docs/connect-chatgpt.md`.
 
 ## Azure Container Apps and Storage in Terraform (azurerm 5.x)
 

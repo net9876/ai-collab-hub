@@ -169,5 +169,5 @@ resource "azuread_application_federated_identity_credential" "deploy" {
   description    = "GitHub Actions deploy workflow, environment ${var.github_environment}"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repository}:environment:${var.github_environment}"
+  subject        = coalesce(var.github_oidc_subject, "repo:${var.github_repository}:environment:${var.github_environment}")
 }

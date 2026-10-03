@@ -75,12 +75,36 @@ but adds sign-in friction; it does not change the server.
 - Queue logging (not used) and two checks checkov cannot evaluate
   (CKV_AZURE_43 computed name, CKV_AZURE_249 interpolated OIDC subject).
 
+## OAuth server for connectors (ChatGPT, Claude.ai)
+
+Remote connectors need DCR/CIMD, which Entra lacks, so the hub is its own
+OAuth 2.1 authorization server (flow: `docs/connect-chatgpt.md`). Controls:
+
+- **Only allowlisted identities.** Sign-in is delegated to Entra (login app,
+  *assignment required*); the returned `oid` must be in `COLLAB_PRINCIPALS`,
+  checked again on every token use and refresh.
+- **No secret.** The login app's credential is a federated identity credential
+  for the Container App's managed identity.
+- **Confused-deputy protection.** A consent page (once per user + client) names
+  the client and its redirect host before any code is issued; pages send
+  `X-Frame-Options: DENY` and a CSP with `frame-ancestors 'none'`.
+- **Redirect allowlist** with structured matching (scheme + host exact, no
+  userinfo/query/fragment), so `http://localhost:1@evil.example/` is refused.
+- **PKCE S256 required**, `resource` must equal the MCP URL, `iss` returned
+  (RFC 9207); authorization codes 5 min and single use; refresh tokens rotate,
+  are single use, cannot widen scopes and keep a 30-day absolute lifetime;
+  access tokens 1 h; revocation endpoint enabled.
+- **Storage.** Codes and tokens are 256-bit random strings stored only as
+  SHA-256 hashes. DCR client secrets (for clients that ask for one) are stored
+  in the Entra-protected table so the token endpoint can verify them. DCR is
+  capped at 200 registered clients.
+- **Not done:** expired `oauth~*` rows are not garbage-collected (tiny volume);
+  CIMD is not offered.
+
 ## Key Vault
 
-Not created. The design has no secrets: storage via managed identity, ACR via
-managed identity, CI via OIDC, clients via Entra tokens. A Key Vault
-(~$0.03 per 10k operations, no base fee) becomes necessary only for the
-future OAuth proxy's client secret (see `docs/connect-chatgpt.md`).
+Not created, still. The design has no secrets: storage, ACR and the OAuth
+login app use the managed identity; CI uses OIDC; CLI clients use Entra tokens.
 
 ## Known limits (be explicit)
 

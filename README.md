@@ -12,10 +12,10 @@ protected by Microsoft Entra ID.
 - Agents get **typed CRUD tools only**. Nothing in the hub can run commands,
   and messages or tasks never make another agent act on their own.
 
-> **Status: v1 prototype-grade, single user.** Code, tests and Terraform are
-> complete and verified locally; Azure deployment requires an explicit
-> `terraform apply` by the owner (see `docs/runbook.md`). ChatGPT and
-> Claude.ai/Desktop connectors are **not** supported yet (see below).
+> **Status: v1, single user, deployed** (Azure Container Apps, East US).
+> Claude Code and Codex connect with Entra tokens from the Azure CLI; ChatGPT
+> and Claude.ai/Desktop connect through the hub's own OAuth server (Entra
+> sign-in). See `docs/STATUS.md` for the current state and open items.
 
 ## Layout
 
@@ -56,8 +56,8 @@ Container App needs an image in the registry the stack creates) â†’ smoke test â
 |---|---|---|
 | Claude Code | yes | `.mcp.json` HTTP server + `headersHelper` getting an Entra token from `az` |
 | Codex (ChatGPT desktop app or CLI) | configured | project `.codex/config.toml` with `http_headers_helper` (same `az` token helper); open the repo as a trusted project |
-| Claude Desktop / claude.ai | no | Connectors need OAuth DCR/CIMD; Entra supports neither |
-| ChatGPT | no | Same limitation; see `docs/connect-chatgpt.md` for the exact blocker and the path to connect later |
+| Claude.ai / Claude Desktop | yes (custom connector) | hub OAuth server: DCR + PKCE, Entra sign-in, consent page; `docs/connect-chatgpt.md` |
+| ChatGPT (developer mode, web) | yes (custom connector) | same OAuth server; write tools need ChatGPT's confirmation |
 
 ## Limits worth knowing
 

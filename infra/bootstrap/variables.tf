@@ -52,6 +52,16 @@ variable "github_repository" {
   default     = ""
 }
 
+variable "github_oidc_subject" {
+  description = <<-EOT
+    Exact OIDC subject GitHub presents. Newer repositories use immutable IDs:
+    repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:<env>
+    (the failing azure/login step prints it). Null = legacy repo:<owner>/<repo>:environment:<env>.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "github_environment" {
   description = "GitHub environment the deploy workflow runs in (OIDC subject)."
   type        = string

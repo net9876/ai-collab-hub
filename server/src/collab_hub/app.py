@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, TypeVar
 
-from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
@@ -55,6 +55,7 @@ from .models import (
     TaskStatus,
     Title,
 )
+from .oauth import APPROVE_PATH, CALLBACK_PATH, EntraUpstream, HubOAuthProvider, Upstream
 from .service import HubService
 from .store import Store
 
@@ -99,23 +100,51 @@ def _setup_logging(level: str) -> None:
     logging.getLogger("azure").setLevel(logging.WARNING)
 
 
-def build_server(settings: Settings, service: HubService) -> MCPServer:
+def build_server(
+    settings: Settings, service: HubService, oauth: HubOAuthProvider | None = None
+) -> MCPServer:
     verifier = JwtTokenVerifier(settings)
-    auth_servers = settings.authorization_servers or settings.issuer or ""
+    if oauth is not None:
+        # The hub is its own OAuth AS (DCR + PKCE, Entra sign-in); its provider
+        # also accepts Entra JWTs, so Claude Code / Codex keep working.
+        auth = AuthSettings(
+            issuer_url=AnyHttpUrl(oauth.issuer),
+            resource_server_url=AnyHttpUrl(settings.resource_url),
+            client_registration_options=ClientRegistrationOptions(
+                enabled=True,
+                valid_scopes=[settings.scope_read, settings.scope_write],
+                default_scopes=[settings.scope_write],
+            ),
+            revocation_options=RevocationOptions(enabled=True),
+            required_scopes=None,  # read/write scopes are checked per tool
+            validate_token_resource=False,  # checked by the provider / JWT verifier
+        )
+        auth_kwargs: dict[str, Any] = {"auth_server_provider": oauth}
+    else:
+        auth_servers = settings.authorization_servers or settings.issuer or ""
+        auth = AuthSettings(
+            issuer_url=AnyHttpUrl(auth_servers),
+            resource_server_url=AnyHttpUrl(settings.resource_url),
+            required_scopes=None,  # read/write scopes are checked per tool
+            validate_token_resource=False,  # Entra 'aud' is the API client ID, checked by us
+        )
+        auth_kwargs = {"token_verifier": verifier}
     server = MCPServer(
         name="collab-hub",
         title="AI Collab Hub",
         version=__version__,
         instructions=INSTRUCTIONS,
-        token_verifier=verifier,
-        auth=AuthSettings(
-            issuer_url=AnyHttpUrl(auth_servers),
-            resource_server_url=AnyHttpUrl(settings.resource_url),
-            required_scopes=None,  # read/write scopes are checked per tool
-            validate_token_resource=False,  # Entra 'aud' is the API client ID, checked by us
-        ),
+        auth=auth,
         log_level=settings.log_level,
+        **auth_kwargs,
     )
+    if oauth is not None:
+        server.custom_route(CALLBACK_PATH, methods=["GET"], include_in_schema=False)(
+            oauth.handle_callback
+        )
+        server.custom_route(APPROVE_PATH, methods=["POST"], include_in_schema=False)(
+            oauth.handle_approve
+        )
 
     async def call(ctx: Context, tool: str, fn: Callable[[Any], Awaitable[T]]) -> T:
         started = time.perf_counter()
@@ -163,6 +192,23 @@ def build_server(settings: Settings, service: HubService) -> MCPServer:
             ctx,
             "project_create",
             lambda p: service.project_create(p, slug, name, purpose, idempotency_key),
+        )
+
+    @server.tool(annotations=MUTATE)
+    async def project_update(
+        ctx: Context,
+        slug: ProjectSlug,
+        expected_revision: Annotated[int, Field(ge=1)],
+        name: Title | None = None,
+        purpose: Annotated[str, Field(min_length=3, max_length=1000)] | None = None,
+        status: ProjectStatus | None = None,
+    ) -> Project:
+        """Edit a project card or change its status (active/paused/archived). Ask the user
+        before pausing or archiving a project. History is kept; nothing is deleted."""
+        return await call(
+            ctx,
+            "project_update",
+            lambda p: service.project_update(p, slug, expected_revision, name, purpose, status),
         )
 
     @server.tool(annotations=RO)
@@ -531,11 +577,22 @@ def build_server(settings: Settings, service: HubService) -> MCPServer:
     return server
 
 
-def create_app(settings: Settings | None = None) -> Starlette:
+def create_app(settings: Settings | None = None, upstream: Upstream | None = None) -> Starlette:
+    """ASGI app. `upstream` overrides the Entra sign-in (tests only)."""
     settings = settings or Settings()  # type: ignore[call-arg]
     _setup_logging(settings.log_level)
-    service = HubService(settings, Store(settings))
-    server = build_server(settings, service)
+    store = Store(settings)
+    service = HubService(settings, store)
+    oauth = None
+    if settings.oauth_enabled:
+        if upstream is None:
+            if store.credential is None:
+                raise RuntimeError(
+                    "OAuth sign-in needs a managed identity (COLLAB_STORAGE_ACCOUNT mode)"
+                )
+            upstream = EntraUpstream(settings, store.credential)
+        oauth = HubOAuthProvider(settings, store, JwtTokenVerifier(settings), upstream)
+    server = build_server(settings, service, oauth)
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         stateless_http=True,

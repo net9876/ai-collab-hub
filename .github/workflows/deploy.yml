@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to 26.04 on 2026-10-19
     environment: production
     timeout-minutes: 20
     steps:
@@ -77,4 +77,8 @@ jobs:
             -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')"
           test "$code" = "401" || { echo "expected 401 without token, got $code"; exit 1; }
+          # OAuth AS metadata for connectors (ChatGPT / Claude.ai); issuer must match PRM.
+          as_issuer="$(curl -fsS "https://${FQDN}/.well-known/oauth-authorization-server" | python3 -c 'import json,sys; print(json.load(sys.stdin)["issuer"])')"
+          prm_as="$(curl -fsS "https://${FQDN}/.well-known/oauth-protected-resource/mcp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["authorization_servers"][0])')"
+          test "$as_issuer" = "$prm_as" || { echo "issuer mismatch: $as_issuer vs $prm_as"; exit 1; }
           echo "OK: healthy, and /mcp rejects unauthenticated calls"
