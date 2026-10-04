@@ -107,7 +107,87 @@ async def main(write: bool) -> None:
                 )
             )
             print(f"task lifecycle ok: {d['status']} by {d['updated_by']}")
+        if "--sessions" in sys.argv:
+            await sessions_smoke(url, headers["Authorization"])
     print("SMOKE OK")
+
+
+SMOKE_PROJECT = "smoke-sessions"
+
+
+async def sessions_smoke(url: str, auth: str) -> None:
+    """Live check of sessions/handoff on an isolated, clearly named test project.
+
+    Writes only to project 'smoke-sessions' (created if missing). Cleanup: both
+    sessions are closed at the end; records stay (the hub has no delete) and the
+    project can be archived with project_update. Labels 'codex' / 'claude-code'
+    here are protocol-level simulation, not the native clients.
+    """
+
+    async def client_for(agent: str):
+        http = httpx2.AsyncClient(
+            headers={"Authorization": auth, "X-Collab-Agent": agent}, timeout=60
+        )
+        return http, Client(streamable_http_client(url, http_client=http))  # type: ignore[arg-type]
+
+    hx, cx_cm = await client_for("codex")
+    hc, cc_cm = await client_for("claude-code")
+    async with hx, hc, cx_cm as cx, cc_cm as cc:
+        ok(
+            await cx.call_tool(
+                "project_create",
+                {
+                    "slug": SMOKE_PROJECT,
+                    "name": "Sessions smoke test",
+                    "purpose": "isolated live checks of sessions/handoff (safe to archive)",
+                    "idempotency_key": "smoke-sessions-project",
+                },
+            )
+        )
+        tag = uuid.uuid4().hex[:6]
+        s = ok(
+            await cx.call_tool("session_start", {"project": SMOKE_PROJECT, "title": f"smoke {tag}"})
+        )
+        cp = ok(
+            await cx.call_tool(
+                "session_checkpoint",
+                {
+                    "session_id": s["id"],
+                    "checkpoint": {
+                        "goal": f"smoke {tag}",
+                        "user_constraints": ["smoke test only"],
+                        "next_actions": ["resume"],
+                    },
+                },
+            )
+        )
+        r = ok(
+            await cc.call_tool(
+                "session_resume", {"project": SMOKE_PROJECT, "checkpoint_id": cp["checkpoint_id"]}
+            )
+        )
+        assert r["status"] == "resumed" and r["context"]["goal"] == f"smoke {tag}"
+        print(
+            f"sessions: checkpoint {cp['checkpoint_id']} resumed as {r['continuation_session_id']}"
+        )
+        cont = ok(await cc.call_tool("session_get", {"session_id": r["continuation_session_id"]}))
+        ok(
+            await cc.call_tool(
+                "session_close",
+                {
+                    "session_id": cont["session"]["id"],
+                    "expected_revision": cont["session"]["revision"],
+                },
+            )
+        )
+        src = ok(await cx.call_tool("session_get", {"session_id": s["id"]}))
+        ok(
+            await cx.call_tool(
+                "session_close",
+                {"session_id": s["id"], "expected_revision": src["session"]["revision"]},
+            )
+        )
+        print("sessions: both smoke sessions closed")
 
 
 if __name__ == "__main__":

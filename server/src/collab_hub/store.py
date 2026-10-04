@@ -335,13 +335,30 @@ class Store:
     # --- blobs ------------------------------------------------------------
 
     @storage_errors
-    async def put_blob(self, name: str, text: str) -> str:
+    async def list_between(self, pk: str, low: str, high: str, limit: int) -> list[dict[str, Any]]:
+        """Rows with low <= RowKey <= high, ascending, at most `limit`."""
+        pager = self.table.query_entities(
+            "PartitionKey eq @pk and RowKey ge @a and RowKey le @b",
+            parameters={"pk": pk, "a": low, "b": high},
+            results_per_page=min(limit, 100),
+        )
+        out: list[dict[str, Any]] = []
+        async for ent in pager:
+            out.append(dict(ent))
+            if len(out) >= limit:
+                break
+        return out
+
+    @storage_errors
+    async def put_blob(
+        self, name: str, text: str, content_type: str = "text/markdown; charset=utf-8"
+    ) -> str:
         data = text.encode("utf-8")
         await self.container.upload_blob(
             name,
             data,
             overwrite=False,
-            content_settings=ContentSettings(content_type="text/markdown; charset=utf-8"),
+            content_settings=ContentSettings(content_type=content_type),
         )
         return hashlib.sha256(data).hexdigest()
 

@@ -30,6 +30,14 @@ EXPECTED_TOOLS = {
     "message_inbox",
     "message_reply",
     "message_mark_read",
+    "session_start",
+    "session_list",
+    "session_get",
+    "session_checkpoint",
+    "session_resume",
+    "session_close",
+    "task_handoff",
+    "task_accept",
 }
 
 

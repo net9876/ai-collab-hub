@@ -77,6 +77,29 @@ Kinds: `project`, `memory`, `decision`, `task`, `message`.
   revision rows; old bodies remain as separate immutable blobs. Blob
   versioning and soft delete add a second safety net.
 
+## Sessions, checkpoints and handoffs
+
+Phase 1 of shared context (`docs/workflow.md`). All rows of one workspace's sessions
+live in one partition `<workspace>~session`, so related writes are atomic:
+
+| RowKey | Row |
+|---|---|
+| `r:<inverted ULID>` | session (title, project, status, `source_client`, `checkpoint_count`, `latest_checkpoint_*`, `continues_session`, `resumed_from_checkpoint`, task links); versioned, ETag |
+| `v:<session>:<rev>` | session history |
+| `c:<session>:<seq>` | checkpoint (immutable); body JSON in Blob `<ws>/session/<sid>/c<seq>-<ULID>.json`, SHA-256 checked on read |
+| `e:<session>:<ULID>` | resume event (actor, continuation session, checkpoint) |
+
+- **Checkpoint write** = upload body blob → one transaction: replace session (If-Match)
+  + create checkpoint row + revision row (+ idempotency row). Without
+  `expected_revision` a lost race re-reads and takes the next `seq` (up to 4 tries).
+- **Resume** = one transaction: create the caller's continuation session + resume
+  event (+ idempotency row). The source session's revision is not touched, so its
+  owner can keep checkpointing.
+- **Task handoff** reuses the task row: `handoff_to/from/note/checkpoint`,
+  `previous_owners`; `task_accept` is an If-Match replace with an audit revision row.
+- Only the session's own client label may checkpoint or close it; others resume it.
+  No hooks, no background capture, no file transfer.
+
 ## Search (honest limits)
 
 Azure Table has no full-text search or `contains` operator. v1 search is:

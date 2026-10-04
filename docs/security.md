@@ -101,6 +101,25 @@ OAuth 2.1 authorization server (flow: `docs/connect-chatgpt.md`). Controls:
 - **Not done:** expired `oauth~*` rows are not garbage-collected (tiny volume);
   CIMD is not offered.
 
+## Sessions and handoffs
+
+- **Scope does not travel by itself.** Every checkpoint and resume response carries
+  a provenance notice: the content is data written by another agent of the same user,
+  it keeps only the scope the user already authorized for that work, and it grants no
+  new permissions, spending or background actions. Tool descriptions and server
+  instructions repeat this to all clients (`shared/RULES.md` §3/§3a).
+- **User words vs agent ideas** are separate fields (`user_constraints` vs
+  `hypotheses`), so a resuming agent does not mistake a guess for a requirement.
+- **No secrets, no hidden reasoning, no transcripts**: checkpoints are structured
+  summaries (60,000-byte cap). Raw transcript capture is opt-in and not implemented.
+- **No implicit ownership changes**: resuming never moves a task; `task_accept` is
+  explicit, atomic (ETag), audited and limited to the agent label named by the owner.
+- **Isolation**: sessions live in the workspace partition; cross-project resume is
+  refused; only the session's own client label can checkpoint or close it.
+- **Self-declared labels**: `source_client` and the agent part of `created_by` come
+  from the client (`X-Collab-Agent` or the OAuth client's redirect host). They separate
+  workstreams; they are not an identity boundary between agents of the same user.
+
 ## Key Vault
 
 Not created, still. The design has no secrets: storage, ACR and the OAuth

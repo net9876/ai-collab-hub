@@ -61,6 +61,11 @@ def _pl(value: Any) -> list[str]:
     return list(json.loads(value))
 
 
+def checkpoint_rk(session_id: str, seq: int) -> str:
+    """Checkpoints live in the session partition: atomic with the session row."""
+    return f"c:{session_id}:{seq:06d}"
+
+
 def _request_hash(payload: dict[str, Any]) -> str:
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -670,8 +675,120 @@ class HubService:
             result=row.get("result") or None,
             evidence=_pl(row.get("evidence")),
             blocker=row.get("blocker") or None,
+            handoff_to=row.get("handoff_to") or None,
+            handoff_from=row.get("handoff_from") or None,
+            handoff_note=row.get("handoff_note") or None,
+            handoff_checkpoint=row.get("handoff_checkpoint") or None,
+            previous_owners=_pl(row.get("previous_owners")),
             **self._audit(row),
         )
+
+    async def _require_checkpoint(
+        self, p: Principal, checkpoint_id: str, project: str | None = None
+    ) -> dict[str, Any]:
+        """Load a checkpoint row ('<session_id>-c<seq>') in the caller's workspace."""
+        session_id, _, seq = checkpoint_id.partition("-c")
+        row = await self.store.get(
+            partition(p.workspace, "session"), checkpoint_rk(session_id, int(seq))
+        )
+        if row is None:
+            raise not_found("checkpoint", checkpoint_id)
+        if project is not None and row["project"] != project:
+            raise HubError("validation", f"checkpoint '{checkpoint_id}' belongs to another project")
+        return row
+
+    @staticmethod
+    def _clear_handoff(row: dict[str, Any]) -> None:
+        for key in ("handoff_to", "handoff_from", "handoff_note", "handoff_checkpoint"):
+            row[key] = ""
+
+    async def task_handoff(
+        self,
+        p: Principal,
+        task_id: str,
+        expected_revision: int,
+        to_agent: str | None,
+        note: str | None,
+        checkpoint_id: str | None,
+        evidence: list[str],
+    ) -> Task:
+        """Current owner offers the task to another agent (or withdraws with to_agent=None).
+
+        Ownership does not move until the recipient calls task_accept.
+        """
+        require(self.s, p, write=True)
+        row = await self._load(p, "task", task_id)
+        if row["status"] not in ("in_progress", "blocked"):
+            raise conflict(
+                f"task '{task_id}' is {row['status']}; only claimed tasks can be handed off"
+            )
+        if row.get("claimed_by") != p.actor:
+            raise HubError(
+                "forbidden",
+                f"task '{task_id}' is owned by {row.get('claimed_by')}; "
+                "only the owner can hand it off",
+            )
+        if to_agent is None:
+            if not row.get("handoff_to"):
+                raise HubError("validation", "there is no pending handoff to withdraw")
+            self._clear_handoff(row)
+            change = "handoff withdrawn"
+        else:
+            if to_agent == p.agent:
+                raise HubError("validation", "cannot hand a task off to your own agent label")
+            if checkpoint_id:
+                await self._require_checkpoint(p, checkpoint_id, row["project"])
+            row["handoff_to"] = to_agent
+            row["handoff_from"] = p.actor
+            row["handoff_note"] = (note or "")[:2000]
+            row["handoff_checkpoint"] = checkpoint_id or ""
+            change = f"handoff offered to {to_agent}"
+        if evidence:
+            merged = list(dict.fromkeys(_pl(row.get("evidence")) + evidence))
+            row["evidence"] = _jl(merged[-40:])
+        rev = await self._save(p, "task", task_id, row, change, expected_revision)
+        row.update(revision=rev, updated_by=p.actor)
+        return self._task(row)
+
+    async def task_accept(self, p: Principal, task_id: str, expected_revision: int) -> Task:
+        """Recipient atomically takes over a task offered with task_handoff."""
+        require(self.s, p, write=True)
+        row = await self._load(p, "task", task_id)
+        target = row.get("handoff_to") or ""
+        if not target:
+            raise conflict(
+                f"task '{task_id}' has no pending handoff (already accepted or withdrawn)"
+            )
+        if target not in (p.agent, "any"):
+            raise HubError("forbidden", f"task '{task_id}' was handed off to {target}, not to you")
+        previous = row.get("claimed_by") or ""
+        if previous == p.actor:
+            raise HubError("validation", "you already own this task")
+        owners = _pl(row.get("previous_owners"))
+        if previous:
+            owners.append(previous)
+        row["previous_owners"] = _jl(owners[-20:])
+        row["claimed_by"] = p.actor
+        row["claimed_at"] = now()
+        self._clear_handoff(row)
+        try:
+            rev = await self._save(
+                p,
+                "task",
+                task_id,
+                row,
+                f"handoff accepted: {previous} -> {p.actor}",
+                expected_revision,
+            )
+        except HubError as err:
+            if err.code == "conflict":
+                raise conflict(
+                    f"task '{task_id}' changed concurrently (another accept or an update); "
+                    "re-read it"
+                ) from err
+            raise
+        row.update(revision=rev, updated_by=p.actor)
+        return self._task(row)
 
     async def task_create(
         self,
@@ -801,6 +918,7 @@ class HubService:
         if release:
             row["status"], row["claimed_by"], row["claimed_at"] = "open", "", ""
             row["blocker"] = ""
+            self._clear_handoff(row)
             change = "released"
         if status is not None:
             allowed = {"open", "cancelled"}
@@ -847,7 +965,13 @@ class HubService:
                 f"{'complete' if status == 'done' else 'block'} it",
             )
         row["status"] = status
+        if "evidence" in fields:
+            # Keep evidence recorded earlier (e.g. by a previous owner at handoff).
+            merged = list(dict.fromkeys(_pl(row.get("evidence")) + list(fields.pop("evidence"))))
+            row["evidence"] = _jl(merged[-40:])
         row.update(fields)
+        if status == "done":
+            self._clear_handoff(row)
         rev = await self._save(p, "task", task_id, row, change, expected_revision)
         row.update(revision=rev, updated_by=p.actor)
         return self._task(row)
@@ -860,7 +984,7 @@ class HubService:
             task_id,
             expected_revision,
             "done",
-            {"result": result, "evidence": _jl(evidence), "blocker": ""},
+            {"result": result, "evidence": evidence, "blocker": ""},
             "completed",
         )
 
