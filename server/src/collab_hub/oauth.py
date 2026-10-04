@@ -323,9 +323,17 @@ class HubOAuthProvider:
     async def _take(self, pk: str, rk: str) -> dict[str, Any] | None:
         """Load a single-use row and atomically mark it used."""
         row = await self.store.get(pk, rk)
-        if row is None or row.get("used") or int(row.get("expires_at", 0)) < _now():
-            return None
-        if not await self.store.consume(pk, rk, row["_etag"]):
+        reason = None
+        if row is None:
+            reason = "unknown"
+        elif row.get("used"):
+            reason = "already used"
+        elif int(row.get("expires_at", 0)) < _now():
+            reason = "expired"
+        elif not await self.store.consume(pk, rk, row["_etag"]):
+            reason = "lost race"
+        if reason:
+            log.info("oauth single-use %s rejected: %s", pk.split("~")[1], reason)
             return None
         return row
 
@@ -371,6 +379,8 @@ class HubOAuthProvider:
         approval_id = str(form.get("approval_id", ""))
         row = await self._take(P_APPROVAL, _hash(approval_id)) if approval_id else None
         if row is None:
+            if not approval_id:
+                log.info("oauth approve refused: missing approval_id")
             return _page("Request expired", "Start the connection again from your app.", 400)
         pending = json.loads(row["pending"])
         if form.get("decision") != "allow":
@@ -597,4 +607,13 @@ Only continue if you started this connection yourself.</p>
 <button class=allow name=decision value=allow>Allow</button>
 <button name=decision value=deny>Deny</button>
 </form></html>"""
-    return HTMLResponse(body, headers=_PAGE_HEADERS)
+    # Chrome applies CSP form-action to the redirect that follows the POST, so
+    # the client's (allowlisted) redirect origin must be allowed explicitly;
+    # with 'self' alone the 302 to claude.ai was silently blocked (2026-10-04).
+    u = urlparse(redirect_uri)
+    headers = dict(_PAGE_HEADERS)
+    headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        f"form-action 'self' {u.scheme}://{u.netloc}; frame-ancestors 'none'"
+    )
+    return HTMLResponse(body, headers=headers)

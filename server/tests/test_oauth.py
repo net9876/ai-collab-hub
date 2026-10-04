@@ -44,7 +44,7 @@ class FakeUpstream:
 
 
 @pytest.fixture(scope="session")
-def oauth_url(settings: Settings):
+def oauth_url(settings: Settings, server_url):  # server_url creates the table/container
     port = _free_port()
     s = settings.model_copy(
         update={
@@ -114,6 +114,9 @@ async def sign_in(http, base, client_id, oid=OWNER, redirect=CLAUDE_CB, decision
     if resp.status_code == 200 and "Allow access" in resp.text:
         approval = re.search(r'name=approval_id value="([^"]+)"', resp.text).group(1)
         assert resp.headers["x-frame-options"] == "DENY"
+        # Chrome applies form-action to the post-submit redirect: the client origin must be allowed.
+        origin = "{0.scheme}://{0.netloc}".format(urlparse(redirect))
+        assert f"form-action 'self' {origin}" in resp.headers["content-security-policy"]
         resp = await http.post(
             f"{base}/oauth/approve", data={"approval_id": approval, "decision": decision}
         )
