@@ -311,3 +311,38 @@ def test_entra_sign_in_requests_profile_scope_for_oid(settings):
     url = EntraUpstream(s, credential=None).authorize_url(state="s", nonce="n", code_challenge="c")
     scope = parse_qs(urlparse(url).query)["scope"][0].split()
     assert {"openid", "profile"} <= set(scope)
+
+
+async def test_oauth_outcomes_are_logged_without_secrets(oauth_url):
+    """Refresh reuse is visible in logs (reason + OAuth error code) and no token leaks."""
+    import logging
+
+    records: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = Grab()
+    logging.getLogger("collab_hub.oauth").addHandler(handler)
+    try:
+        async with httpx2.AsyncClient() as http:
+            client_id = (await register(http, oauth_url)).json()["client_id"]
+            resp, verifier = await sign_in(http, oauth_url, client_id)
+            tok = (
+                await token(http, oauth_url, client_id, redirect_params(resp)["code"], verifier)
+            ).json()
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": tok["refresh_token"],
+                "client_id": client_id,
+            }
+            assert (await http.post(f"{oauth_url}/token", data=data)).status_code == 200
+            assert (await http.post(f"{oauth_url}/token", data=data)).status_code == 400
+    finally:
+        logging.getLogger("collab_hub.oauth").removeHandler(handler)
+    text = "\n".join(records)
+    assert '"what": "refresh_token", "reason": "already used"' in text
+    assert '"event": "oauth_http"' in text and '"error": "invalid_grant"' in text
+    assert '"event": "oauth_token_issued", "grant": "refresh_token"' in text
+    assert tok["refresh_token"] not in text and tok["access_token"] not in text
