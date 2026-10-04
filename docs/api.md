@@ -56,6 +56,35 @@ Exact JSON schemas are served by `tools/list`; this page is the overview.
 | `message_inbox(include_read?, project?, limit, cursor?)` | read | Messages to your agent label or `any`. |
 | `message_reply(message_id, body, idempotency_key?)` | write | Reply in thread to the sender's agent. |
 | `message_mark_read(message_ids[1..50])` | write | Idempotent; only for messages addressed to you. |
+| `task_handoff(task_id, expected_revision, to_agent?, note?, checkpoint_id?, evidence?)` | write | Owner only. Offers the task to an agent label (or `any`); `to_agent` omitted = withdraw. Owner unchanged until accepted; evidence is appended. |
+| `task_accept(task_id, expected_revision)` | write | Recipient label only. Atomic ownership transfer (one winner), audit row, `previous_owners` updated, evidence kept. |
+
+### Sessions and checkpoints (handoffs between clients)
+
+| Tool | Access | Purpose |
+|---|---|---|
+| `session_start(project, title, task_ids?, idempotency_key?)` | write | One session per conversation/workstream; `source_client` = caller's (self-declared) label. |
+| `session_list(project?, status?, source_client?, query?, limit, cursor?)` | read | Newest first; keywords match title + latest checkpoint goal. |
+| `session_get(session_id, checkpoint_seq?, latest_checkpoint?)` | read | Card, 20 most recent checkpoint summaries, resume events; one full checkpoint on request. |
+| `session_checkpoint(session_id, checkpoint, expected_revision?, idempotency_key?)` | write | Owner client only, active sessions only. Immutable checkpoint `<session_id>-c<seq>`. Without `expected_revision` concurrent writers are serialized (distinct seq); with it, stale → `conflict`. Max 60,000 bytes. |
+| `session_resume(project, checkpoint_id \| session_id \| latest=true, detail=overview\|full, title?, idempotency_key?)` | write | Returns the exact selected checkpoint's context and a new continuation session for the caller; records a resume event on the source. `latest` with several active checkpointed sessions → `status: "ambiguous"` + candidates, nothing created. Never moves tasks. |
+| `session_close(session_id, expected_revision, note?)` | write | Owner client only. Checkpoints stay resumable. |
+
+`checkpoint` fields: `goal` (required), `summary`, `user_constraints` (what the
+user said), `hypotheses` (agent assumptions, kept apart), `decisions[{text,
+decision_id?}]`, `open_questions`, `completed[{item, evidence[]}]`,
+`next_actions`, `blockers`, `code_state{repository_url, local_path, branch,
+head_commit, dirty, changed_files[], tests[{command, result}], artifacts[]}`,
+`task_ids`, `memory_ids`. Bounds: see the JSON schema from `tools/list`.
+
+Resume response: `status`, `selected_session_id`, `selected_checkpoint_id`,
+`continuation_session_id`, `detail`, `truncated`, `context`, `candidates`,
+`idempotent_replay`, `notice` (provenance and scope). `overview` trims lists to 5
+items, the summary to 1,500 characters and changed files to 20.
+
+`project_get_context` now also returns up to 5 `active_sessions`.
+
+Usage examples per client: `docs/workflow.md`.
 
 `project_create` and `project_update` go beyond the originally requested list:
 without them no project could exist or be retired, and every other write
@@ -79,6 +108,16 @@ any non-final ──task_update(status=cancelled)──► cancelled
 ```
 
 `done` and `cancelled` are final.
+
+Handoff (owner unchanged until accepted):
+
+```
+in_progress/blocked (owner A) ──task_handoff(to B)──► same status, handoff_to=B
+        ▲                                                   │
+        └──task_handoff(to_agent omitted) withdraws ────────┤
+                                                            ▼
+                                   task_accept by B ──► owner B, previous_owners += A
+```
 
 ## Safety semantics in tool descriptions
 

@@ -135,6 +135,28 @@ secrets `AZURE_CLIENT_ID` (bootstrap `deploy_client_id`), `AZURE_TENANT_ID`,
 `CONTAINER_APP` (terraform outputs). Then Actions → deploy → Run workflow.
 (`gh secret set NAME --env production` / `gh variable set NAME --env production`.)
 
+## 8. Releasing sessions / handoffs (phase 1)
+
+No infrastructure change: same table, container and app. Only after the owner says so:
+
+```powershell
+# after the PR is merged
+gh workflow run deploy.yml --repo net9876/ai-collab-hub -f ref=main
+# live smoke on the isolated project 'smoke-sessions' (codex/claude-code labels are simulated)
+$env:COLLAB_MCP_URL = terraform "-chdir=infra/terraform" output -raw mcp_url
+$env:COLLAB_API_SCOPE = terraform "-chdir=infra/bootstrap" output -raw api_scope
+.\.venv\Scripts\python.exe scripts/smoke.py --sessions
+```
+
+Cleanup: the smoke closes both sessions it creates; records are kept (no delete in
+the hub). Archive the project when done: `project_update(slug="smoke-sessions",
+status="archived")`.
+
+Then refresh clients (`docs/workflow.md`, "How each client gets its instructions"):
+new Claude Code session, new Codex chat, new Claude.ai chat (reconnect the connector if
+the session tools are missing), new ChatGPT chat (refresh/re-create the plugin if the
+tools are missing).
+
 ## Operations
 
 - **Logs:** Log Analytics → `ContainerAppConsoleLogs_CL | where Log_s has "tool_call"`.

@@ -69,3 +69,5 @@ Container App needs an image in the registry the stack creates) â†’ smoke test â
 - Storage and registry endpoints are public (Entra-only access, keys disabled).
 
 Details: `docs/security.md`, `docs/architecture.md`, `docs/compatibility.md`.
+Continuing work across clients (sessions, checkpoints, task handoff): `docs/workflow.md`;
+next phases: `docs/roadmap.md`.

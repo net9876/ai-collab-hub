@@ -21,7 +21,7 @@
 
 Правила для агентов и навыки живут в Git (`shared/RULES.md`, `skills/`), рабочее
 состояние — в хабе. Агентам доступны только типизированные CRUD-операции
-(21 инструмент). Выполнить команду, прочитать файл или достучаться до ноутбука
+(21 инструмент в развёрнутой версии; ветка `feat/sessions-handoff` добавляет ещё 8 — сессии и передачу задач, всего 29). Выполнить команду, прочитать файл или достучаться до ноутбука
 через хаб нельзя. Сообщения и задачи — это данные, а не приказы: агент обязан
 спросить пользователя, прежде чем действовать по ним.
 
@@ -68,13 +68,14 @@ Entra ID: API-приложение, login-приложение, GitHub deploy-п
 
 | Область | Статус | Как проверено |
 |---|---|---|
-| Сервер, 21 инструмент | ✅ | 53 теста на Azurite через реальный MCP-клиент: auth-отказы, пагинация, гонка за задачу, сбои хранилища, полный OAuth-поток |
+| Сервер, 21 инструмент (развёрнут) | ✅ | 54 теста на Azurite через реальный MCP-клиент: auth-отказы, пагинация, гонка за задачу, сбои хранилища, полный OAuth-поток |
+| Сессии и передача задач (фаза 1) | 🟡 в PR, **не развёрнуто** | 64 теста (10 новых), включая сценарии A и B на уровне протокола; см. `docs/workflow.md` |
 | Azure | ✅ развёрнуто | smoke-тест по HTTPS: 401 без токена, вызовы с токеном, цикл задачи |
 | Claude Code (`C:\AI\collab`) | ✅ подключён | `/mcp`: collab connected, вызовы работают |
 | Codex в приложении ChatGPT | ✅ подключён | вызовы `project_list` и `project_get_context` из Codex |
 | Обновление токена | ✅ | задача Планировщика сама вызвала `az` (`ok: refreshed`) |
-| Claude.ai / Claude Desktop | ✅ подключён | кастомный коннектор (Register automatically = DCR), вход Microsoft, согласие |
-| ChatGPT | ✅ подключён | плагин «Create custom MCP server» (OAuth, DCR); на Plus возможны ограничения на запись со стороны ChatGPT |
+| Claude.ai / Claude Desktop | ⚠️ нужно переподключить | вход прошёл 2026-10-04, но позже Claude пометил подключение недействительным; ни одного вызова от `owner/claude-desktop` в логах нет. Вероятная причина — обновление токена попало на холодный старт (~18 с), сервер `/token` пока не логирует |
+| ChatGPT | ✅ подключён, запись работает | 2026-10-04 22:17–22:29: `project_list`, `project_get_context`, `task_list`, `task_create` от `owner/chatgpt` |
 | Переписка агентов | ✅ | Codex → Claude Code «ping», Claude Code → Codex «Re: ping» |
 | Расходы | ✅ по плану | с начала месяца $0.41 (всё — ACR), Container Apps/Storage/логи — $0 |
 | Деплой из GitHub | ✅ | workflow `deploy`: вход по OIDC, сборка, выкатка, smoke — success |
@@ -98,12 +99,11 @@ Entra ID: API-приложение, login-приложение, GitHub deploy-п
 
 ## 4. Что ещё не подтверждено или требует действий
 
-1. **PR #6** (scope `profile`, CSP страницы согласия) ждёт merge. Уже развёрнут;
-   пока он не смержен, `main` отстаёт от того, что работает в Azure.
-2. **Первые реальные вызовы из ChatGPT и Claude.ai.** Подключение прошло, но
-   вызовов инструментов от `owner/chatgpt` и `owner/claude-desktop` в логах
-   ещё нет: проверить `Call project_list from Collab` в обоих, и одну запись
-   (например, `memory_add`), чтобы увидеть, разрешает ли план ChatGPT запись.
+1. **PR фазы 1 (сессии/передача задач)** ждёт ревью; деплой — только по команде
+   владельца (`docs/runbook.md` §8). PR #6 смержен 2026-10-04; `main` совпадает с
+   развёрнутым серверным кодом.
+2. **Claude.ai:** переподключить коннектор (Settings → Connectors → Collab →
+   Connect). Чтобы найти причину сброса, стоит логировать исходы `/token`.
 3. **Codex не прочитал** «Re: ping» и «ping from Claude Code» — достаточно
    попросить его `Check my collab inbox`.
 4. **Холодный старт.** Приложение засыпает при простое; первый запрос после
@@ -130,6 +130,9 @@ Entra ID: API-приложение, login-приложение, GitHub deploy-п
 - `Create a task in collab: …`, `Claim task <id>`, `Complete it with evidence`
 - `Send a message in collab to codex: …`, `Check my collab inbox`
 - `Archive project <slug> in collab` (через `project_update`)
+
+Сессии и передача работы между клиентами (после деплоя фазы 1): `docs/workflow.md`.
+План развития (фазы 2–3): `docs/roadmap.md`.
 
 Проверка здоровья: `claude mcp list` (collab: Connected),
 `Get-Content $env:LOCALAPPDATA\ai-collab-hub\refresh.log -Tail 5`.
