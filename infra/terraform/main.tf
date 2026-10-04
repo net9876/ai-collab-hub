@@ -267,7 +267,8 @@ data "azuread_service_principal" "graph" {
 }
 
 locals {
-  graph_openid_scope_id = "37f7f235-527c-4136-accd-4a02d197296e" # Graph delegated 'openid'
+  graph_openid_scope_id  = "37f7f235-527c-4136-accd-4a02d197296e" # Graph delegated 'openid'
+  graph_profile_scope_id = "14dad69e-099b-42c9-810b-d002981feec1" # Graph delegated 'profile' (needed for oid in v2 id_tokens)
 }
 
 resource "azuread_application" "login" {
@@ -284,6 +285,10 @@ resource "azuread_application" "login" {
     resource_app_id = "00000003-0000-0000-c000-000000000000"
     resource_access {
       id   = local.graph_openid_scope_id
+      type = "Scope"
+    }
+    resource_access {
+      id   = local.graph_profile_scope_id
       type = "Scope"
     }
   }
@@ -308,7 +313,7 @@ resource "azuread_service_principal_delegated_permission_grant" "login_openid" {
   for_each                             = var.enable_oauth ? var.collab_principals : {}
   service_principal_object_id          = azuread_service_principal.login[0].object_id
   resource_service_principal_object_id = data.azuread_service_principal.graph[0].object_id
-  claim_values                         = ["openid"]
+  claim_values                         = ["openid", "profile"]
   user_object_id                       = each.key
 }
 

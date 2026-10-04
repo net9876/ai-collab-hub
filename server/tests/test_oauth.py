@@ -296,3 +296,15 @@ def test_redirect_allowlist_matching():
     assert not redirect_allowed("https://claude.ai/other", allow)
     assert not redirect_allowed("http://claude.ai/api/mcp/auth_callback", allow)
     assert time.time() > 0
+
+
+def test_entra_sign_in_requests_profile_scope_for_oid(settings):
+    """Entra v2 id_tokens carry `oid` only with the `profile` scope (live bug 2026-10-04)."""
+    from collab_hub.oauth import EntraUpstream
+
+    s = settings.model_copy(
+        update={"oauth_enabled": True, "oauth_login_client_id": "login-app", "tenant_id": "tid"}
+    )
+    url = EntraUpstream(s, credential=None).authorize_url(state="s", nonce="n", code_challenge="c")
+    scope = parse_qs(urlparse(url).query)["scope"][0].split()
+    assert {"openid", "profile"} <= set(scope)

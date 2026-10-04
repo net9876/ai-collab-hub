@@ -55,6 +55,10 @@ from .store import Store
 
 log = logging.getLogger("collab_hub.oauth")
 
+# Entra v2 puts `oid` into the id_token only when `profile` is requested
+# (seen live 2026-10-04: "id_token has no oid" with scope=openid alone).
+OIDC_SCOPES = "openid profile"
+
 ACCESS_PREFIX = "chb_at_"
 REFRESH_PREFIX = "chb_rt_"
 PENDING_TTL = 600
@@ -157,7 +161,7 @@ class EntraUpstream:
                 "response_type": "code",
                 "redirect_uri": self._redirect_uri,
                 "response_mode": "query",
-                "scope": "openid",
+                "scope": OIDC_SCOPES,
                 "state": state,
                 "nonce": nonce,
                 "code_challenge": code_challenge,
@@ -174,7 +178,7 @@ class EntraUpstream:
             "code": code,
             "redirect_uri": self._redirect_uri,
             "code_verifier": code_verifier,
-            "scope": "openid",
+            "scope": OIDC_SCOPES,
             "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             "client_assertion": mi.token,
         }

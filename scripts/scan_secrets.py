@@ -38,6 +38,7 @@ EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PUBLIC_GUIDS = {
     "04b07795-8ddb-461a-bbee-02f9e1bf7b46",  # Azure CLI public client ID
     "37f7f235-527c-4136-accd-4a02d197296e",  # Microsoft Graph delegated 'openid' scope ID
+    "14dad69e-099b-42c9-810b-d002981feec1",  # Microsoft Graph delegated 'profile' scope ID
 }
 EMAIL_OK = re.compile(
     r"(noreply@anthropic\.com|@example\.(com|test|org)|\.example$|@users\.noreply\.github\.com)$"
