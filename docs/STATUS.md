@@ -1,4 +1,4 @@
-# AI Collab Hub — состояние на 2026-10-03
+# AI Collab Hub — состояние на 2026-10-04
 
 Отчёт для обсуждения дальнейших шагов. Репозиторий: `net9876/ai-collab-hub`
 (private), локальный клон `C:\AI\collab`. Подробности — по ссылкам на `docs/`.
@@ -73,7 +73,10 @@ Entra ID: API-приложение, login-приложение, GitHub deploy-п
 | Claude Code (`C:\AI\collab`) | ✅ подключён | `/mcp`: collab connected, вызовы работают |
 | Codex в приложении ChatGPT | ✅ подключён | вызовы `project_list` и `project_get_context` из Codex |
 | Обновление токена | ✅ | задача Планировщика сама вызвала `az` (`ok: refreshed`) |
-| OAuth для коннекторов | ✅ серверная часть | живой сервер: метаданные согласованы, DCR (чужой redirect → 400), `/authorize` ведёт на вход Microsoft без ошибок |
+| Claude.ai / Claude Desktop | ✅ подключён | кастомный коннектор (Register automatically = DCR), вход Microsoft, согласие |
+| ChatGPT | ✅ подключён | плагин «Create custom MCP server» (OAuth, DCR); на Plus возможны ограничения на запись со стороны ChatGPT |
+| Переписка агентов | ✅ | Codex → Claude Code «ping», Claude Code → Codex «Re: ping» |
+| Расходы | ✅ по плану | с начала месяца $0.41 (всё — ACR), Container Apps/Storage/логи — $0 |
 | Деплой из GitHub | ✅ | workflow `deploy`: вход по OIDC, сборка, выкатка, smoke — success |
 | CI | ✅ | ruff/mypy/pytest, terraform validate, checkov, gitleaks, docker build; раннер закреплён на ubuntu-24.04 |
 | Хаб наполнен | ✅ | 4 решения, 5 проверенных фактов, бэклог, итоги расследования |
@@ -89,21 +92,24 @@ Entra ID: API-приложение, login-приложение, GitHub deploy-п
   `repo:owner@id/repo@id:...`.
 - **SDK таблиц:** удаление несуществующей строки считается успешным,
   поэтому одноразовые коды сделаны через отметку с ETag.
+- **Entra id_token без `oid`:** нужен scope `profile`, не только `openid`.
+- **Страница согласия:** CSP `form-action 'self'` блокировала в Chrome
+  возврат в claude.ai после Allow; теперь разрешён ровно адрес клиента.
 
 ## 4. Что ещё не подтверждено или требует действий
 
-1. **Первый вход через коннектор.** Сервер проверен до страницы входа
-   Microsoft. Остаток цепочки ещё не прогонялся вживую: вход пользователя,
-   обмен кода с помощью managed identity, согласие. Нужно подключить коннектор
-   в claude.ai (Settings → Connectors → Add custom connector) и/или в ChatGPT
-   (Developer mode). Инструкции: `docs/connect-chatgpt.md`. При ошибке в логах
-   приложения будет строка `entra token request failed: <код>`.
-2. **Переписка агентов.** Сообщение «ping from Claude Code» ждёт Codex.
-   Попросить Codex прочитать его (`message_inbox`) и ответить (`message_reply`);
-   затем проверить ответ в Claude Code.
-3. **PR #5** (OAuth, `project_update`, CI) ждёт ревью и merge. Уже развёрнут
-   из ветки PR через workflow `deploy`.
-4. **Ноутбук.** Рекомендации, без изменений системы:
+1. **PR #6** (scope `profile`, CSP страницы согласия) ждёт merge. Уже развёрнут;
+   пока он не смержен, `main` отстаёт от того, что работает в Azure.
+2. **Первые реальные вызовы из ChatGPT и Claude.ai.** Подключение прошло, но
+   вызовов инструментов от `owner/chatgpt` и `owner/claude-desktop` в логах
+   ещё нет: проверить `Call project_list from Collab` в обоих, и одну запись
+   (например, `memory_add`), чтобы увидеть, разрешает ли план ChatGPT запись.
+3. **Codex не прочитал** «Re: ping» и «ping from Claude Code» — достаточно
+   попросить его `Check my collab inbox`.
+4. **Холодный старт.** Приложение засыпает при простое; первый запрос после
+   паузы может не уложиться в таймаут клиента (так было у ChatGPT). Вариант:
+   `min_replicas = 1` — примерно +$3–6 в месяц. Решение за владельцем.
+5. **Ноутбук.** Рекомендации, без изменений системы:
    - один браузер вместо трёх (Chrome, Edge, Opera);
    - закрывать лишние окна VS Code;
    - перезагрузка раз в неделю;
