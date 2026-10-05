@@ -117,6 +117,72 @@ def redirect_allowed(uri: str, patterns: list[str]) -> bool:
     return False
 
 
+OAUTH_LOG_PATHS = ("/token", "/register", "/authorize", "/revoke", "/oauth/")
+
+
+class OAuthAccessLog:
+    """ASGI middleware: one line per OAuth request — method, path, status and the OAuth
+    `error` code of 4xx/5xx JSON responses. No query strings, headers or bodies are
+    logged (they carry codes, secrets and tokens)."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        path = scope.get("path", "") if scope.get("type") == "http" else ""
+        if not path.startswith(OAUTH_LOG_PATHS):
+            await self.app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        status = 0
+        error: str | None = None
+        first_body = True
+
+        async def capture(message: Any) -> None:
+            nonlocal status, error, first_body
+            if message["type"] == "http.response.start":
+                status = int(message["status"])
+            elif message["type"] == "http.response.body" and first_body:
+                first_body = False
+                if status >= 400:
+                    try:
+                        err = json.loads(message.get("body") or b"{}").get("error")
+                        error = str(err)[:64] if err else None
+                    except (ValueError, AttributeError):
+                        error = None
+            await send(message)
+
+        try:
+            await self.app(scope, receive, capture)
+        finally:
+            fields = {
+                "method": scope.get("method", ""),
+                "path": path,
+                "status": str(status),
+                "ms": f"{(time.perf_counter() - started) * 1000:.0f}",
+            }
+            if error:
+                fields["error"] = error
+            _event("oauth_http", **fields)
+
+
+def _event(event: str, **fields: str) -> None:
+    """One JSON log line; never tokens, codes, subjects or request parameters."""
+    log.info(json.dumps({"event": event, **fields}))
+
+
+def _reject(what: str, reason: str) -> None:
+    _event("oauth_reject", what=what, reason=reason)
+
+
+def _why(row: dict[str, Any] | None, client_id: str) -> str:
+    if row is None:
+        return "unknown"
+    if row.get("used"):
+        return "already used"
+    return "issued to another client" if row.get("client_id") != client_id else "invalid"
+
+
 class UpstreamError(Exception):
     pass
 
@@ -428,6 +494,7 @@ class HubOAuthProvider:
     ) -> HubAuthorizationCode | None:
         row = await self.store.get(P_CODE, _hash(authorization_code))
         if row is None or row.get("used") or row["client_id"] != client.client_id:
+            _reject("authorization_code", _why(row, client.client_id))
             return None
         return HubAuthorizationCode(
             code=authorization_code,
@@ -484,8 +551,10 @@ class HubOAuthProvider:
         if not await self.store.consume(
             P_CODE, _hash(authorization_code.code), authorization_code.etag
         ):
+            _reject("authorization_code", "lost race (already used)")
             raise TokenError("invalid_grant", "authorization code was already used")
         assert authorization_code.subject
+        _event("oauth_token_issued", grant="authorization_code", agent=authorization_code.agent)
         return await self._issue_tokens(
             client.client_id,
             authorization_code.scopes,
@@ -498,10 +567,18 @@ class HubOAuthProvider:
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> HubRefreshToken | None:
         if not refresh_token.startswith(REFRESH_PREFIX):
+            _reject("refresh_token", "not a hub refresh token")
             return None
-        row = await self.store.get(P_REFRESH, _hash(refresh_token))
+        try:
+            row = await self.store.get(P_REFRESH, _hash(refresh_token))
+        except HubError:
+            _reject("refresh_token", "storage unavailable")
+            raise
         if row is None or row.get("used") or row["client_id"] != client.client_id:
+            _reject("refresh_token", _why(row, client.client_id))
             return None
+        if int(row["expires_at"]) < _now():
+            _reject("refresh_token", "expired")
         return HubRefreshToken(
             token=refresh_token,
             client_id=row["client_id"],
@@ -517,13 +594,17 @@ class HubOAuthProvider:
         self, client: OAuthClientInformationFull, refresh_token: HubRefreshToken, scopes: list[str]
     ) -> OAuthToken:
         if not await self.store.consume(P_REFRESH, _hash(refresh_token.token), refresh_token.etag):
+            _reject("refresh_token", "lost race (already used)")
             raise TokenError("invalid_grant", "refresh token was already used")
         if refresh_token.subject not in self.s.principals:
+            _reject("refresh_token", "principal no longer allowed")
             raise TokenError("invalid_grant", "account is no longer allowed")
         requested = scopes or refresh_token.scopes
         if not set(requested) <= set(refresh_token.scopes):
+            _reject("refresh_token", "scope widening")
             raise TokenError("invalid_scope", "cannot widen scopes on refresh")
         assert refresh_token.subject and refresh_token.expires_at
+        _event("oauth_token_issued", grant="refresh_token", agent=refresh_token.agent)
         return await self._issue_tokens(
             client.client_id,
             requested,
@@ -539,10 +620,17 @@ class HubOAuthProvider:
         try:
             row = await self.store.get(P_ACCESS, _hash(token))
         except HubError:
+            # Answered as 401 by the SDK; logged so it is not mistaken for a bad token.
+            _reject("access_token", "storage unavailable")
             return None
-        if row is None or row.get("used") or int(row["expires_at"]) < _now():
+        if row is None:
+            _reject("access_token", "unknown")
+            return None
+        if row.get("used") or int(row["expires_at"]) < _now():
+            _reject("access_token", "revoked" if row.get("used") else "expired")
             return None
         if row["subject"] not in self.s.principals:
+            _reject("access_token", "principal no longer allowed")
             return None
         return AccessToken(
             token=token,

@@ -7,8 +7,8 @@ pages on the date above. Verify again before applying; USD, excluding tax.
 
 | Resource | SKU / setting | Pricing | Assumed usage | Est. / month |
 |---|---|---|---|---|
-| Container Apps | consumption, 0.25 vCPU / 0.5 GiB, min 0 / max 2 | $0.000024 per vCPU-s active, $0.000003 per GiB-s, $0.40 per 1M requests; **free each month: 180k vCPU-s, 360k GiB-s, 2M requests per subscription** | 2 h active/day ≈ 54k vCPU-s, 108k GiB-s, < 50k requests | **$0** (inside the grant; the only other app in the subscription also scales to zero) |
-| Container Apps idle | — | idle rate applies only to replicas kept warm | min 0 ⇒ no idle replicas | $0 |
+| Container Apps | consumption, 0.25 vCPU / 0.5 GiB, min 1 / max 2 | $0.000024 per vCPU-s active, $0.000003 per GiB-s, $0.40 per 1M requests; **free each month: 180k vCPU-s, 360k GiB-s, 2M requests per subscription** | 2 h active/day ≈ 54k vCPU-s, 108k GiB-s, < 50k requests | **$0** (inside the grant; the only other app in the subscription also scales to zero) |
+| Container Apps idle (always-on replica) | `min_replicas = 1` (since 2026-10-04) | idle: $0.000003 per vCPU-s, $0.000003 per GiB-s | 1 × 0.25 vCPU / 0.5 GiB × 2.59M s ≈ 648k vCPU-s + 1.30M GiB-s; minus the free grant | **≈ $4–6** (≈ $5.8 before grant; grant shared with other apps) |
 | Container Registry | Basic | $0.1666/day | always on | **≈ $5.00** |
 | Storage (data) | StorageV2 Hot LRS, versioning | $0.0208/GB-month; writes $0.05 per 10k; reads $0.004 per 10k; table ops similar order | < 1 GB, < 100k ops | **≈ $0.05–0.30** |
 | Storage (Terraform state) | Hot LRS | same | KBs | **< $0.01** |
@@ -17,7 +17,7 @@ pages on the date above. Verify again before applying; USD, excluding tax.
 | Key Vault | not created | — | — | $0 |
 | GitHub | private repo, Actions | free plan includes 2,000 Actions minutes/month (private) | CI ≈ 5 min/run | $0 |
 
-**Expected total: ≈ $5–7 per month**, dominated by ACR Basic.
+**Expected total: ≈ $9–12 per month**: ACR Basic (~$5) + the always-on replica (~$4–6). With `min_replicas = 0` it drops back to ≈ $5–7, at the price of an ~18 s cold start that broke connector setup/refresh (2026-10-04).
 
 **Upper bound with the caps as configured:** Log Analytics can ingest at most
 0.2 GB/day (≈ 6 GB/month ≈ $14 worst case if the free 5 GB is already used by
@@ -27,8 +27,9 @@ worst case for personal use stays under ~$20.
 
 ## Minimum / always-on charges
 
-- ACR Basic is billed per day whether used or not (**the only fixed cost**).
-- Everything else is usage-based and scales to ~zero when idle.
+- ACR Basic is billed per day whether used or not.
+- The always-on Container Apps replica (`min_replicas = 1`) is billed at the idle rate around the clock.
+- Everything else is usage-based.
 - The free Container Apps grant is shared with every app in the subscription.
 
 ## Cheaper alternatives (not chosen)

@@ -105,9 +105,13 @@ variable "app_memory" {
 }
 
 variable "min_replicas" {
-  description = "0 = scale to zero when idle (cold start of a few seconds on the first call)."
+  description = <<-EOT
+    Replicas kept running. 1 (default, ~$4-6/month idle) avoids the ~18 s cold start that
+    broke a ChatGPT connector setup and is the suspected cause of a Claude.ai token refresh
+    failure (2026-10-04). 0 = scale to zero (cheapest; first call after idle waits).
+  EOT
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "max_replicas" {

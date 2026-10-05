@@ -62,7 +62,14 @@ from .models import (
     TaskStatus,
     Title,
 )
-from .oauth import APPROVE_PATH, CALLBACK_PATH, EntraUpstream, HubOAuthProvider, Upstream
+from .oauth import (
+    APPROVE_PATH,
+    CALLBACK_PATH,
+    EntraUpstream,
+    HubOAuthProvider,
+    OAuthAccessLog,
+    Upstream,
+)
 from .service import HubService
 from .sessions import SessionService
 from .store import Store
@@ -799,6 +806,8 @@ def create_app(settings: Settings | None = None, upstream: Upstream | None = Non
             allowed_origins=[settings.public_url.rstrip("/")],
         ),
     )
+    if oauth is not None:
+        app.add_middleware(OAuthAccessLog)
     inner_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
