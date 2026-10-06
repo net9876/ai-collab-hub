@@ -7,8 +7,8 @@ pages on the date above. Verify again before applying; USD, excluding tax.
 
 | Resource | SKU / setting | Pricing | Assumed usage | Est. / month |
 |---|---|---|---|---|
-| Container Apps | consumption, 0.25 vCPU / 0.5 GiB, min 1 / max 2 | $0.000024 per vCPU-s active, $0.000003 per GiB-s, $0.40 per 1M requests; **free each month: 180k vCPU-s, 360k GiB-s, 2M requests per subscription** | 2 h active/day ≈ 54k vCPU-s, 108k GiB-s, < 50k requests | **$0** (inside the grant; the only other app in the subscription also scales to zero) |
-| Container Apps idle (always-on replica) | `min_replicas = 1` (since 2026-10-04) | idle: $0.000003 per vCPU-s, $0.000003 per GiB-s | 1 × 0.25 vCPU / 0.5 GiB × 2.59M s ≈ 648k vCPU-s + 1.30M GiB-s; minus the free grant | **≈ $4–6** (≈ $5.8 before grant; grant shared with other apps) |
+| Container Apps | consumption, 0.25 vCPU / 0.5 GiB, min 1 / max 2 | $0.000024 per vCPU-s active, $0.000003 per GiB-s, $0.40 per 1M requests; **free each month: 180k vCPU-s, 360k GiB-s, 2M requests per subscription** | 2 h active/day ≈ 54k vCPU-s, 108k GiB-s, < 50k requests | **$0** (inside the free grant when the subscription has no other Container Apps) |
+| Container Apps idle (always-on replica) | `min_replicas = 1` (since 2026-10-04) | idle: $0.000003 per vCPU-s, $0.000003 per GiB-s | 1 × 0.25 vCPU / 0.5 GiB × 2.59M s ≈ 648k vCPU-s + 1.30M GiB-s; minus the free grant | **≈ $4–6** (≈ $5.8 before grant; the grant is shared by all apps in the subscription) |
 | Container Registry | Basic | $0.1666/day | always on | **≈ $5.00** |
 | Storage (data) | StorageV2 Hot LRS, versioning | $0.0208/GB-month; writes $0.05 per 10k; reads $0.004 per 10k; table ops similar order | < 1 GB, < 100k ops | **≈ $0.05–0.30** |
 | Storage (Terraform state) | Hot LRS | same | KBs | **< $0.01** |

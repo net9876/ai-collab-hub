@@ -113,7 +113,7 @@ claude mcp list                          # expect: collab ... connected (approve
 pwsh -File scripts/connect-codex.ps1     # reuses .collab.local.json
 pwsh -File scripts/mcp-headers.ps1 -Refresh          # fill the token cache the clients read
 pwsh -File scripts/token-refresh-task.ps1 -Install   # optional: keep it fresh (every 5 min)
-# Codex in the ChatGPT desktop app: open C:\AI\collab as a project, trust it,
+# Codex in the ChatGPT desktop app: open this repository's folder as a project, trust it,
 # check Settings > MCP servers (collab). Codex CLI: run `codex` here, then /mcp.
 ```
 
@@ -141,7 +141,7 @@ No infrastructure change: same table, container and app. Only after the owner sa
 
 ```powershell
 # after the PR is merged
-gh workflow run deploy.yml --repo net9876/ai-collab-hub -f ref=main
+gh workflow run deploy.yml --repo <owner>/<repo> -f ref=main
 # live smoke on the isolated project 'smoke-sessions' (codex/claude-code labels are simulated)
 $env:COLLAB_MCP_URL = terraform "-chdir=infra/terraform" output -raw mcp_url
 $env:COLLAB_API_SCOPE = terraform "-chdir=infra/bootstrap" output -raw api_scope
