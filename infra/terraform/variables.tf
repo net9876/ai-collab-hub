@@ -67,6 +67,12 @@ variable "enable_oauth" {
   default     = true
 }
 
+variable "enable_dashboard" {
+  description = "Serve the read-only web dashboard at /dashboard (Entra sign-in through the login app; needs enable_oauth)."
+  type        = bool
+  default     = true
+}
+
 variable "deploy_principal_object_id" {
   description = "Object ID of the GitHub OIDC deploy service principal (bootstrap output). Null = no CI deploy roles."
   type        = string

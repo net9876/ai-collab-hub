@@ -23,6 +23,15 @@ from starlette.responses import JSONResponse
 from . import __version__
 from .auth import JwtTokenVerifier, resolve_principal
 from .config import Settings
+from .dashboard import (
+    CALLBACK_PATH as DASH_CALLBACK_PATH,
+)
+from .dashboard import (
+    DASH_PATH,
+    LOGIN_PATH,
+    LOGOUT_PATH,
+    Dashboard,
+)
 from .errors import HubError
 from .models import (
     AgentName,
@@ -795,6 +804,16 @@ def create_app(settings: Settings | None = None, upstream: Upstream | None = Non
             upstream = EntraUpstream(settings, store.credential)
         oauth = HubOAuthProvider(settings, store, JwtTokenVerifier(settings), upstream)
     server = build_server(settings, service, oauth)
+    if settings.dashboard_enabled:
+        assert upstream is not None
+        dash = Dashboard(settings, service, upstream)
+        for path, method, handler in (
+            (DASH_PATH, "GET", dash.page),
+            (LOGIN_PATH, "GET", dash.login),
+            (DASH_CALLBACK_PATH, "GET", dash.callback),
+            (LOGOUT_PATH, "POST", dash.logout),
+        ):
+            server.custom_route(path, methods=[method], include_in_schema=False)(handler)
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         stateless_http=True,

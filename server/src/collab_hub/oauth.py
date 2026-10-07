@@ -190,9 +190,13 @@ class UpstreamError(Exception):
 class Upstream(Protocol):
     """The identity provider that signs the user in (Entra in production)."""
 
-    def authorize_url(self, *, state: str, nonce: str, code_challenge: str) -> str: ...
+    def authorize_url(
+        self, *, state: str, nonce: str, code_challenge: str, callback_path: str = CALLBACK_PATH
+    ) -> str: ...
 
-    async def redeem(self, *, code: str, code_verifier: str, nonce: str) -> str:
+    async def redeem(
+        self, *, code: str, code_verifier: str, nonce: str, callback_path: str = CALLBACK_PATH
+    ) -> str:
         """Exchange the upstream code; return the verified subject (Entra oid)."""
         ...
 
@@ -211,7 +215,7 @@ class EntraUpstream:
         self._tenant = settings.tenant_id
         self._client_id = settings.oauth_login_client_id
         self._credential = credential
-        self._redirect_uri = settings.public_url.rstrip("/") + CALLBACK_PATH
+        self._public = settings.public_url.rstrip("/")
         base = f"https://login.microsoftonline.com/{self._tenant}"
         self._authorize = f"{base}/oauth2/v2.0/authorize"
         self._token = f"{base}/oauth2/v2.0/token"
@@ -220,12 +224,14 @@ class EntraUpstream:
             f"{base}/discovery/v2.0/keys", cache_jwk_set=True, lifespan=3600
         )
 
-    def authorize_url(self, *, state: str, nonce: str, code_challenge: str) -> str:
+    def authorize_url(
+        self, *, state: str, nonce: str, code_challenge: str, callback_path: str = CALLBACK_PATH
+    ) -> str:
         query = urlencode(
             {
                 "client_id": self._client_id,
                 "response_type": "code",
-                "redirect_uri": self._redirect_uri,
+                "redirect_uri": self._public + callback_path,
                 "response_mode": "query",
                 "scope": OIDC_SCOPES,
                 "state": state,
@@ -236,13 +242,15 @@ class EntraUpstream:
         )
         return f"{self._authorize}?{query}"
 
-    async def redeem(self, *, code: str, code_verifier: str, nonce: str) -> str:
+    async def redeem(
+        self, *, code: str, code_verifier: str, nonce: str, callback_path: str = CALLBACK_PATH
+    ) -> str:
         mi = await self._credential.get_token("api://AzureADTokenExchange/.default")
         form = {
             "client_id": self._client_id,
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": self._redirect_uri,
+            "redirect_uri": self._public + callback_path,
             "code_verifier": code_verifier,
             "scope": OIDC_SCOPES,
             "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",

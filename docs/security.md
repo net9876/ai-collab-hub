@@ -135,3 +135,7 @@ login app use the managed identity; CI uses OIDC; CLI clients use Entra tokens.
 - No rate limiting beyond ACA scaling limits (max 2 replicas) and body caps.
 - Memory bodies are stored in plain text in Azure Storage (encrypted at rest by
   Azure with Microsoft-managed keys). Do not store secrets there (rule 5).
+
+## Web dashboard
+
+Optional read-only page (`/dashboard`), Entra sign-in restricted to `COLLAB_PRINCIPALS`, titles and statuses only, `personal-*` projects filtered server-side. Details: `docs/dashboard.md`.

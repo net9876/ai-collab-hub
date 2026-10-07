@@ -249,6 +249,7 @@ locals {
     COLLAB_LOG_LEVEL                  = "INFO"
     COLLAB_OAUTH_ENABLED              = tostring(var.enable_oauth)
     COLLAB_OAUTH_LOGIN_CLIENT_ID      = var.enable_oauth ? azuread_application.login[0].client_id : ""
+    COLLAB_DASHBOARD_ENABLED          = tostring(var.enable_oauth && var.enable_dashboard)
   }
 }
 
@@ -278,7 +279,10 @@ resource "azuread_application" "login" {
   owners           = [data.azuread_client_config.current.object_id]
 
   web {
-    redirect_uris = ["https://${local.app_fqdn}/oauth/callback"]
+    redirect_uris = concat(
+      ["https://${local.app_fqdn}/oauth/callback"],
+      var.enable_dashboard ? ["https://${local.app_fqdn}/dashboard/callback"] : [],
+    )
   }
 
   required_resource_access {
