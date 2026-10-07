@@ -12,7 +12,7 @@ nothing captures a chat automatically, and no file contents are copied.
 | Claude Code (`C:\AI\collab`) | yes: `CLAUDE.md` imports `shared/RULES.md` | `CLAUDE.md` + MCP server `instructions` + tool descriptions | start a new session (or `/mcp` → reconnect `collab`) |
 | Codex (ChatGPT app, project `C:\AI\collab`) | yes: `AGENTS.md` (no imports; it tells Codex to read `shared/RULES.md`) | `AGENTS.md` + MCP `instructions` + tool descriptions | open a new Codex chat in the project |
 | Claude.ai / Claude Desktop (connector "Collab") | **no** | only the MCP server `instructions` and tool descriptions | start a new chat; if new tools are missing: Settings → Connectors → Collab → Disconnect / Connect |
-| ChatGPT (plugin "Collab", custom MCP) | **no** | only the MCP server `instructions` and tool descriptions | start a new chat; if new tools are missing, open Plugins → Collab and refresh/re-create it (ChatGPT discovers tools when the plugin is created — exact refresh control **to be verified**) |
+| ChatGPT (plugin "Collab", custom MCP) | **no** | only the MCP server `instructions` and tool descriptions | start a new chat; if new tools are missing, open the Collab connection in ChatGPT and use its **refresh tools** option (ChatGPT reads the tool list when the connection is created, so tools added by a later deploy stay hidden until you refresh; confirmed by the owner 2026-10-07 — no need to re-create the connection) |
 
 The server-side `instructions` (in `server/src/collab_hub/app.py`) are therefore the
 "plugin instructions" for the browser clients. They change only when the server is
