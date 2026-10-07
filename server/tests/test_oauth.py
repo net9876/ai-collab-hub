@@ -34,10 +34,14 @@ CHATGPT_CB = "https://chatgpt.com/connector_platform_oauth_redirect"
 class FakeUpstream:
     """Stands in for Entra: code 'ok:<oid>' signs in <oid>; 'fail' fails."""
 
-    def authorize_url(self, *, state: str, nonce: str, code_challenge: str) -> str:
-        return f"https://idp.test/authorize?state={state}&nonce={nonce}"
+    def authorize_url(
+        self, *, state: str, nonce: str, code_challenge: str, callback_path: str = "/oauth/callback"
+    ) -> str:
+        return f"https://idp.test/authorize?state={state}&nonce={nonce}&cb={callback_path}"
 
-    async def redeem(self, *, code: str, code_verifier: str, nonce: str) -> str:
+    async def redeem(
+        self, *, code: str, code_verifier: str, nonce: str, callback_path: str = "/oauth/callback"
+    ) -> str:
         if not code.startswith("ok:"):
             raise UpstreamError("upstream refused")
         return code[3:]

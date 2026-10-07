@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     oauth_refresh_ttl_seconds: int = Field(default=30 * 86400, ge=3600, le=90 * 86400)
     oauth_max_clients: int = Field(default=200, ge=1, le=10000)
 
+    # --- read-only web dashboard (/dashboard), signed in through the same Entra login app
+    dashboard_enabled: bool = False
+    dashboard_hidden_prefixes: str = "personal-"  # project slugs starting with these never show
+    dashboard_session_hours: int = Field(default=8, ge=1, le=72)
+
     # --- http --------------------------------------------------------------
     public_url: str = "http://127.0.0.1:8000"
     allowed_hosts: str = ""  # comma separated; defaults to the public_url host
@@ -86,6 +91,8 @@ class Settings(BaseSettings):
             raise ValueError("COLLAB_PRINCIPALS is empty: nobody could use the server")
         if self.oauth_enabled and not self.oauth_login_client_id:
             raise ValueError("COLLAB_OAUTH_ENABLED needs COLLAB_OAUTH_LOGIN_CLIENT_ID")
+        if self.dashboard_enabled and not self.oauth_enabled:
+            raise ValueError("COLLAB_DASHBOARD_ENABLED needs COLLAB_OAUTH_ENABLED (shared sign-in)")
         return self
 
     @property

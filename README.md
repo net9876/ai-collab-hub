@@ -130,7 +130,8 @@ docs/                       architecture, api, security, costs, compatibility, r
 
 `docs/STATUS.md` (current state), `docs/architecture.md`, `docs/api.md`,
 `docs/security.md`, `docs/costs.md`, `docs/compatibility.md`, `docs/runbook.md`,
-`docs/workflow.md` (sessions, checkpoints, handoff), `docs/roadmap.md`.
+`docs/workflow.md` (sessions, checkpoints, handoff), `docs/dashboard.md` (read-only web
+dashboard), `docs/roadmap.md`.
 
 ## Contributing, security, license
 
