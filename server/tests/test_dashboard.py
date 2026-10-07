@@ -77,7 +77,9 @@ async def sign_in(base: str, oid: str):
 async def test_anonymous_gets_sign_in_page_only(dash_url):
     async with httpx2.AsyncClient() as http:
         r = await http.get(f"{dash_url}/dashboard")
-    assert r.status_code == 200 and "Sign in" in r.text and "Visible lab" not in r.text
+    assert (
+        r.status_code == 200 and 'href="/dashboard/login"' in r.text and "Visible lab" not in r.text
+    )
     assert "default-src 'none'" in r.headers["content-security-policy"]
     assert r.headers["cache-control"] == "no-store"
 

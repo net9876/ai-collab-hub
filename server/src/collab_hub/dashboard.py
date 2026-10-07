@@ -309,7 +309,9 @@ border:1px solid var(--line)}
 .blocked,.high{border-color:#dc2626;color:#dc2626}
 .in_progress,.active{border-color:#2563eb;color:#2563eb}
 .done{border-color:#16a34a;color:#16a34a}code{color:var(--mut)}
-button{padding:8px 16px;margin-top:1.5em}
+button,.btn{padding:8px 16px;margin-top:1.5em}
+.btn{display:inline-block;border:1px solid var(--line);border-radius:4px;color:var(--fg);
+background:var(--card);text-decoration:none}
 details{margin-top:1.2em}
 """
 
@@ -329,10 +331,9 @@ def _page(
 ) -> HTMLResponse:
     form = ""
     if action:
-        path, method, label = action
-        form = (
-            f'<form method={method.lower()} action="{path}"><button>{_esc(label)}</button></form>'
-        )
+        path, _, label = action
+        # A link, not a form: Chrome applies form-action to the redirect to Microsoft.
+        form = f'<p><a class=btn href="{path}">{_esc(label)}</a></p>'
     return HTMLResponse(
         _doc(title, f"<h1>{_esc(title)}</h1><p>{_esc(text)}</p>{form}"),
         status_code=status,
