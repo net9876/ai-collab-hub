@@ -3,34 +3,24 @@
 [![ci](https://github.com/net9876/ai-collab-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/net9876/ai-collab-hub/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Shared working state for several AI agents of one person — **Claude Code**,
-**Codex**, **Claude.ai / Desktop** and **ChatGPT** — through a remote MCP
-server on Azure Container Apps, backed by Azure Table + Blob Storage and
-protected by Microsoft Entra ID.
+AI Collab Hub is a self-hosted MCP server that provides shared working state for **ChatGPT**, **Claude.ai / Desktop**, **Claude Code** and **Codex**. It runs on Azure Container Apps, uses Azure Table and Blob Storage, and authenticates users through Microsoft Entra ID.
 
-- **Git (this repo)** holds rules, skills, schemas, code and infrastructure.
-- **The hub** holds working state: memories, decisions, tasks, messages,
-  project cards and session checkpoints — each with an ID, UTC timestamps, a
-  verified author, a revision and history.
-- Agents get **typed CRUD tools only**. Nothing in the hub can run commands,
-  and messages or tasks never make another agent act on their own.
+## Why this exists
 
-## Why
+AI clients keep separate conversation and project context. Switching clients often means rebuilding requirements, decisions and progress by hand. The hub provides a common store that connected clients can read and update across discussions and work sessions, including research, learning, personal planning and software development. Agent roles are chosen for each task or discussion.
 
-Every AI client starts each conversation from zero and none of them sees what
-the others learned. The hub is one small, auditable place where they all read
-and write the same facts, decisions and tasks, so work can move between clients
-without copy-pasting context.
+## Capabilities
 
-## What you get
+- Project-scoped memories, decisions, tasks and messages, with provenance and revision history where supported.
+- Structured session checkpoints and explicit cross-client resume workflows.
+- Atomic task claiming and explicit ownership handoff and acceptance.
+- Typed record operations through MCP; the hub does not execute code or automatically invoke agents.
+- Entra-authenticated user identity; client labels remain self-declared.
+- Terraform-defined infrastructure, managed identity for storage access, and GitHub OIDC for deployment.
 
-- Shared memory, decisions (ADR-style, supersedable), tasks with atomic
-  claiming, messages between agents, and session checkpoints for handoff.
-- One identity model: Entra sign-in, a verified user and a per-client agent label.
-- No secrets to manage: managed identity, GitHub OIDC, storage keys disabled.
-- Reproducible with Terraform; about $9–12 per month (`docs/costs.md`).
-- Tested without Azure: server tests run against the Azurite emulator through a
-  real MCP client.
+The repository holds code, infrastructure, schemas and shared instructions. The hub holds working state. Clients must explicitly save and retrieve context; native conversations and uncommitted files are not automatically synchronized.
+
+This is an open-source personal project for others to inspect, deploy and adapt. See [Architecture](#architecture), [Deploy and connect](#deploy-and-connect), [workflow examples](docs/workflow.md) and [cost estimates](docs/costs.md) for implementation and usage details.
 
 ## Architecture
 
