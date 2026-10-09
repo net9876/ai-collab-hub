@@ -91,6 +91,8 @@ Full commands are in `docs/runbook.md`. In short:
 | Claude.ai / Claude Desktop | yes (custom connector) | hub OAuth server: DCR + PKCE, Entra sign-in, consent page; `docs/connect-chatgpt.md` |
 | ChatGPT (developer mode, web) | yes (custom connector) | same OAuth server; write tools need ChatGPT's confirmation |
 
+**From a phone.** The Claude and ChatGPT mobile apps can use the same connectors, so you can review and manage tasks away from your computer (the author does this). Agents are not started remotely: a task waits in the hub until you open a client on your computer and begin work. The read-only web dashboard (`docs/dashboard.md`) also works in a phone browser. Mobile connector availability depends on your plan and app version; it is not part of this project's tests.
+
 ## Layout
 
 ```
