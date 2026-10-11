@@ -38,6 +38,11 @@ EXPECTED_TOOLS = {
     "session_close",
     "task_handoff",
     "task_accept",
+    "event_subscribe",
+    "event_subscriptions",
+    "event_unsubscribe",
+    "event_poll",
+    "event_ack",
 }
 
 
