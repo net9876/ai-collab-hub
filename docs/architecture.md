@@ -20,7 +20,7 @@ lives in Azure and is reached through a remote MCP server with typed CRUD tools.
   Codex CLI  ──┤ HTTPS + Entra JWT          │
                │ (az login token)           ▼
                └──────────────────► Container App "collab-hub" (consumption,
-                                     scale 0..2, /mcp Streamable HTTP, /healthz)
+                                     scale 1..2, /mcp Streamable HTTP, /healthz)
                                          │ user-assigned managed identity
                                          ├── Table "hub"  (Storage Table Data Contributor, table scope)
                                          └── Blob "content" (Storage Blob Data Contributor, container scope)
@@ -57,8 +57,10 @@ One Azure Table (`hub`) and one Blob container (`content`).
 | record | `<workspace>~<kind>` | `r:<inverted ULID>` (project: `r:<slug>`) | inverted ⇒ newest first |
 | revision | same | `v:<id>:<rev 8 digits>` | immutable snapshot of metadata + actor + change |
 | idempotency | same | `i:<sha256(alias, tool, key)>` | request hash to detect key reuse |
+| event | `<workspace>~task\|message\|decision` | `x:<ULID>` (not inverted) | durable event, same transaction as the change; ascending = chronological |
+| subscription | `<workspace>~subscription` | `r:<sha256(owner_actor\|name)>` | event consumer: filters, per-kind cursors, recent acks |
 
-Kinds: `project`, `memory`, `decision`, `task`, `message`.
+Kinds: `project`, `memory`, `decision`, `task`, `message`, `session`, `subscription`.
 
 - **Atomicity.** Record + revision (+ idempotency row, + superseded decision)
   are written in one entity-group transaction (same partition): all or
@@ -118,12 +120,40 @@ rows scanned (≈ $0.0004 per 10k transactions class; negligible at personal
 scale). Beyond ~10k records per kind, or for semantic search, move the index
 to Azure AI Search (free tier) — a later phase.
 
-## Scale to zero
+## Replicas and statelessness
 
-`min_replicas = 0`: no charge while idle. The first call after idle waits for
-a cold start (a few seconds; the startup probe allows 60 s). The server is
-stateless (`stateless_http=True`, JSON responses), so any replica can serve
-any request and clients do not depend on sticky sessions.
+`min_replicas = 1` (default since 2026-10-04): one idle replica stays up, because
+the ~18 s cold start of scale-to-zero broke connector setup and token refresh.
+`min_replicas = 0` is still possible (cheapest; the first call after idle waits,
+the startup probe allows 60 s). `max_replicas = 2`. The server is stateless
+(`stateless_http=True`, JSON responses), so any replica can serve any request
+and clients do not depend on sticky sessions.
+
+## Durable events (pull)
+
+Decision record: `docs/adr/0001-durable-events.md`.
+
+```
+ agent A ── task_handoff ──► HubService._save ── one transaction, partition <ws>~task ──┐
+                                                   replace record (If-Match)           │
+                                                   create revision v:<id>:<rev>        │
+                                                   create event    x:<ULID>            │
+ bridge / agent B ── event_poll(name) ──► read <ws>~subscription (cursors)            ◄─┘
+                                          range-read x:<cursor-120 s>.. per kind (OData filter)
+                  ── event_ack(ids)   ──► replace subscription (If-Match, no history row)
+```
+
+- **Atomic:** the event row shares the record's partition and transaction, so it
+  exists if and only if the change committed; idempotent replays add none.
+- **Per-consumer cursors:** each subscription stores `cursors[kind]` and the IDs
+  acknowledged inside a 120 s replay window, so late commits are delivered once.
+  Delivery is at-least-once; consumers dedupe by `event_id`.
+- **No push and no new infrastructure:** same table, same roles. Claude Code/Codex
+  can run the opt-in local bridge (`scripts/bridge.py`, per-user scheduled task via
+  `scripts/bridge-task.ps1`); vendor-hosted clients only see events when they poll
+  during a conversation.
+- **Isolation:** workspace from the verified principal; subscriptions are owned by
+  `alias/agent`; the agent label stays self-declared.
 
 ## Two ways in: CLI clients and connectors
 
@@ -142,6 +172,7 @@ and the same per-tool authorization.
 
 - No shell, command execution, file paths, GitHub token proxy or access from
   Azure to the laptop. Tools are typed CRUD only.
-- No agent-to-agent auto-invocation: messages and tasks never trigger work.
+- No agent-to-agent auto-invocation: messages, tasks and events never trigger work.
+  The event bridge only shows events to the user and acknowledges them.
 - No private networking (would need a VNet-integrated environment).
 - No per-agent Entra identity, no bulk export/backup tool, no semantic search.

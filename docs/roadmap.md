@@ -25,3 +25,20 @@ file transfer, no agent invocation. See `docs/workflow.md`.
    repos/commands, budgets, approval gates, audit), designed as a separate service.
 
 Each phase needs the user's go-ahead; none is implied by phase 1.
+
+## Event delivery (ADR 0001)
+
+- **Phase A — durable events (this change):** event rows written atomically with
+  task, message and decision changes; per-consumer subscriptions with
+  `event_poll` / `event_ack` (at-least-once, pull only).
+- **Phase B — Windows bridge (this change):** opt-in `scripts/bridge.py` and
+  `scripts/bridge-task.ps1`; shows events as toasts or console lines and
+  acknowledges them. Reads only; never acts.
+- **Phase C — opt-in runners (future, not built):** a separate, explicitly
+  installed component that may start work in response to an event only through an
+  approval gate the user answers each time (or a narrow allow-list the user wrote),
+  with allow-listed repositories/commands, budgets, audit and a kill switch. It
+  depends on phase 3 (capability registry, bounded runners) and needs its own ADR
+  and the user's go-ahead.
+- Later: `event_prune` / retention, more event types (task cancelled/unblocked,
+  session checkpoints) if they prove useful.

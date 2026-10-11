@@ -41,6 +41,27 @@ worst case for personal use stays under ~$20.
 - **Disable storage diagnostics** (`enable_storage_diagnostics = false`) to
   save a few cents of log ingestion.
 
+## Durable events and the bridge (2026-10-11)
+
+No new resources. Each event is one extra row (≈ 0.5–1 KB) in the write transaction
+that already happens; at most one extra write operation (≈ $0.05 per 10k). Per bridge poll:
+
+- 1 Container Apps request (`tools/call event_poll`; the MCP session is kept open, the
+  handshake repeats only when the token cache changes, roughly hourly);
+- 1 table point read (the subscription) + 1 range query per kind in scope (3 by
+  default), each normally one page;
+- 1 `tool_call` log line (≈ 200 bytes);
+- an `event_ack` (point reads + 1 write) only when there were events.
+
+At the default 45 s interval: ≈ 1,920 polls/day ≈ 58k requests/month (the free grant is
+2M), ≈ 230k table reads/month (≈ $0.10 at $0.004 per 10k), ≈ 12 MB of logs/month (inside
+the free 5 GB and far below the 0.2 GB/day cap). CPU per poll is milliseconds on the
+always-on replica: **≈ $0.10/month per running bridge**. With `min_replicas = 0` a
+running bridge would keep a replica warm (polls every 45 s are shorter than the
+scale-in cooldown), which costs the idle rate above; use `--interval` ≥ 600 s there or
+stop the bridge when not needed. Event retention is unbounded in v1: 100 events/day ≈
+40 MB/year ≈ $0.01/month.
+
 ## Teardown cost
 
 After `terraform destroy` of the main stack only the state account remains

@@ -39,6 +39,7 @@ PUBLIC_GUIDS = {
     "04b07795-8ddb-461a-bbee-02f9e1bf7b46",  # Azure CLI public client ID
     "37f7f235-527c-4136-accd-4a02d197296e",  # Microsoft Graph delegated 'openid' scope ID
     "14dad69e-099b-42c9-810b-d002981feec1",  # Microsoft Graph delegated 'profile' scope ID
+    "1ac14e77-02e7-4e5d-b744-2eb1ae5198b7",  # Windows known folder FOLDERID_System (toast AUMID)
 }
 EMAIL_OK = re.compile(
     r"(noreply@anthropic\.com|@example\.(com|test|org)|\.example$|@users\.noreply\.github\.com)$"
