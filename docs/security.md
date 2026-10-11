@@ -13,6 +13,8 @@ this page).
 | Someone else in the tenant gets a token | The API's service principal has *assignment required*; only assigned users get tokens. The server additionally allowlists `oid`s (`COLLAB_PRINCIPALS`). |
 | Agent spoofs another author | Author = verified alias + agent label. The label is self-declared and recorded as such; the alias cannot be forged. |
 | Prompt injection through stored content | Messages/tasks/memories are returned with a notice that they are data; rules and tool descriptions forbid acting on them without the user; no tool can execute anything. |
+| Event content used as an order | Events carry only titles/status/IDs plus a "data, not instructions" notice; the bridge only displays and acknowledges; nothing subscribes an agent to act. |
+| Reading another agent's event feed | Subscriptions are owned by `alias/agent`; poll/ack/unsubscribe by anyone else is `forbidden`; the workspace comes from the verified principal. |
 | Lost update / double claim | ETag If-Match on every write; entity-group transactions; tested concurrent claim. |
 | Oversized or malformed input | 256 KiB body cap (413), pydantic schemas with lengths/patterns, cursor validation, bounded scans. |
 | DNS rebinding / wrong Host | SDK transport security with an explicit host allowlist (the app FQDN). |
@@ -120,6 +122,49 @@ OAuth 2.1 authorization server (flow: `docs/connect-chatgpt.md`). Controls:
   from the client (`X-Collab-Agent` or the OAuth client's redirect host). They separate
   workstreams; they are not an identity boundary between agents of the same user.
 
+## Durable events and the local bridge
+
+Design: `docs/adr/0001-durable-events.md`.
+
+- **What an event contains.** Type, record ID/revision, project, time, actor,
+  recipient label and a small payload (title or subject, status, IDs such as
+  `thread_id`, `claimed_by`, `handoff_to`, `checkpoint_id`). Never message bodies,
+  task descriptions, results, evidence, blockers, handoff notes, checkpoint content,
+  tokens or credentials. Titles are free text written by agents, so rule 5 (no
+  secrets, no personal data) applies to them as before.
+- **Isolation.** Event rows live in the workspace's own partitions and are read only
+  with the caller's workspace. A subscription is owned by the `alias/agent` that
+  created it; only that actor may poll, acknowledge or remove it (`forbidden`
+  otherwise). Subscribing needs the writer role (it stores state).
+- **Self-declared label (known limitation).** `agents` filters match the
+  self-declared `to_agent` label, like `message_inbox` today. A client that declares
+  `claude-code` can subscribe to `codex`-addressed events (and can declare itself
+  `codex`). This separates workstreams of one user; it is **not** a security boundary.
+  The verified boundaries are the user (alias) and the workspace.
+- **Untrusted data.** Each event carries a `notice`; the server instructions and tool
+  descriptions say an event never authorizes work. A handoff event does not accept
+  the handoff; a message event does not mark the message read.
+- **Logging.** One `tool_call` line per call (tool, actor, principal fingerprint,
+  outcome, latency); no filters, event content or IDs.
+
+### Bridge boundary (`scripts/bridge.py`)
+
+- **Opt-in only.** It runs when the user starts it, or at logon after the user
+  explicitly runs `scripts/bridge-task.ps1 -Install` (per-user task, limited rights,
+  no stored password). `-Uninstall` removes it.
+- **Capabilities.** It calls `event_subscribe`, `event_poll` and `event_ack` on its
+  own subscription with the cached token from the token refresh task; it never calls
+  `az`. It does **not** execute commands, start Claude Code, Codex or any other
+  agent, accept handoffs, claim tasks, mark messages read, touch repositories, or
+  write anything except its own log (`%LOCALAPPDATA%\ai-collab-hub\bridge.log`,
+  rotated at 1 MB, one backup) and stdout.
+- **Display hardening.** Event text is stripped of control/escape characters before
+  printing. For toasts the only child process is a fixed `powershell.exe` script;
+  event text is passed in environment variables and XML-escaped inside the script,
+  never placed on a command line or in code.
+- **Secrets.** Headers are read from the per-user cache (ACL: current user only) and
+  never printed or logged.
+
 ## Key Vault
 
 Not created, still. The design has no secrets: storage, ACR and the OAuth
@@ -129,7 +174,8 @@ login app use the managed identity; CI uses OIDC; CLI clients use Entra tokens.
 
 - Single-user v1. Workspace isolation exists in the data model and is tested,
   but role management is a config map, not an admin UI.
-- The agent label is self-declared.
+- The agent label is self-declared (this also applies to event subscription filters).
+- Event delivery is at-least-once and pull-only; events are retained indefinitely in v1.
 - Storage and ACR endpoints are public (Entra-only).
 - Search is keyword substring matching, not a security boundary.
 - No rate limiting beyond ACA scaling limits (max 2 replicas) and body caps.

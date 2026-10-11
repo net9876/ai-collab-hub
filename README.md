@@ -14,6 +14,7 @@ AI clients keep separate conversation and project context. Switching clients oft
 - Project-scoped memories, decisions, tasks and messages, with provenance and revision history where supported.
 - Structured session checkpoints and explicit cross-client resume workflows.
 - Atomic task claiming and explicit ownership handoff and acceptance.
+- Durable events for messages, task changes and decisions, pulled per subscription (at-least-once); an optional Windows bridge shows them as toasts. Nothing is pushed and events never start work.
 - Typed record operations through MCP; the hub does not execute code or automatically invoke agents.
 - Entra-authenticated user identity; client labels remain self-declared.
 - Terraform-defined infrastructure, managed identity for storage access, and GitHub OIDC for deployment.

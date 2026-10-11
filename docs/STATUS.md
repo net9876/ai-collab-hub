@@ -14,14 +14,16 @@ state between sessions:
 - **decisions** — ADR-style records; a new decision can atomically supersede an old one;
 - **tasks** — with atomic claiming: of several agents, exactly one wins;
 - **messages** — notes between agents, with a recipient and threads;
-- **sessions** — checkpoints and task handoff between clients (`docs/workflow.md`).
+- **sessions** — checkpoints and task handoff between clients (`docs/workflow.md`);
+- **events** — durable notifications of task/message/decision changes, pulled per
+  subscription (`docs/adr/0001-durable-events.md`), optionally shown by a local bridge.
 
 Every record has an ID, a UTC time, a verified author (`owner/<agent>`), a
 revision number and history. There are no silent overwrites: an update requires
 `expected_revision`.
 
 Rules for agents and skills live in Git (`shared/RULES.md`, `skills/`); working
-state lives in the hub. Agents only get typed CRUD operations (29 tools, see
+state lives in the hub. Agents only get typed CRUD operations (34 tools, see
 `docs/api.md`). The hub cannot run a command, read a file or reach the user's
 machine. Messages and tasks are data, not orders: an agent must ask the user
 before acting on them.
@@ -67,7 +69,7 @@ Entra ID: API app, login app, GitHub deploy app
 
 | Area | Status | How it is verified |
 |---|---|---|
-| Server, 29 tools | done | 64 tests on Azurite through a real MCP client: auth denial, pagination, task race, storage failures, full OAuth flow |
+| Server, 34 tools | done | 88 tests on Azurite through a real MCP client: auth denial, pagination, task race, storage failures, full OAuth flow |
 | Sessions and task handoff | done | protocol-level tests of both handoff scenarios; see `docs/workflow.md` |
 | Azure deployment | done | HTTPS smoke test: 401 without a token, calls with a token, task lifecycle |
 | Claude Code | supported | `/mcp` shows `collab` connected; tool calls work |
@@ -76,6 +78,7 @@ Entra ID: API app, login app, GitHub deploy app
 | Claude.ai / Claude Desktop | supported | custom connector through the hub OAuth server |
 | ChatGPT | supported | custom connector; write tools need ChatGPT's confirmation |
 | Agent messaging | done | Codex → Claude Code and back |
+| Durable events + bridge | branch `feature/event-delivery-bridge` (not deployed) | atomic event rows, poll/ack, replay window, isolation; bridge `--once` against the test server |
 | GitHub deploy | done | `deploy` workflow: OIDC sign-in, build, roll out, smoke test |
 | CI | done | ruff, mypy, pytest, terraform validate, checkov, gitleaks, docker build; runner pinned to ubuntu-24.04 |
 
@@ -110,6 +113,7 @@ Open an agent in the repository folder and use phrases such as:
 - `Record a decision in collab: …` / `Add a verified memory in collab: …`
 - `Create a task in collab: …`, `Claim task <id>`, `Complete it with evidence`
 - `Send a message in collab to codex: …`, `Check my collab inbox`
+- `Check my Collab events` (session start), or run the bridge (`docs/runbook.md` §9)
 - `Archive project <slug> in collab` (through `project_update`)
 
 Sessions and handoff between clients: `docs/workflow.md`. Roadmap (phases 2–3):

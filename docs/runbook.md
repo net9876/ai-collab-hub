@@ -157,9 +157,42 @@ new Claude Code session, new Codex chat, new Claude.ai chat (reconnect the conne
 the session tools are missing), new ChatGPT chat (refresh/re-create the plugin if the
 tools are missing).
 
+## 9. Event bridge (optional, per user)
+
+Shows hub events (messages, handoffs, task and decision changes) as Windows toasts or
+console lines and acknowledges them. It reads and acknowledges only; it never runs
+commands or starts agents (`docs/security.md`, "Bridge boundary"). Needs the token
+cache (step 6, `token-refresh-task.ps1 -Install`).
+
+```powershell
+# try it
+.\.venv\Scripts\python.exe scripts\bridge.py --once                       # claude-code, console
+.\.venv\Scripts\python.exe scripts\bridge.py --agent codex --notify toast  # keep running; Ctrl+C stops
+# run at logon (persistent change; only if you want it)
+pwsh -File scripts/bridge-task.ps1 -Install                  # -Agent codex, -Notify console, -Interval 60
+pwsh -File scripts/bridge-task.ps1 -Status                   # task state, last result, log tail
+Get-Content $env:LOCALAPPDATA\ai-collab-hub\bridge.log -Tail 20 -Wait
+pwsh -File scripts/bridge-task.ps1 -Uninstall
+```
+
+- **Flags:** `--agent` (default `claude-code`), `--interval` (45 s, minimum 15),
+  `--subscription` (default `bridge-<agent>`), `--from now|beginning` (new subscription
+  only), `--notify console|toast`, `--log <path>`, `--once`.
+- **Monitor:** `bridge.log` has one `poll ok: N event(s)` line per poll and one line per
+  event; failures show `poll failed (n in a row): <reason>` with exponential backoff up
+  to 5 minutes. `401` means the cached token expired: check `refresh.log` / run
+  `mcp-headers.ps1 -Refresh`; the bridge re-reads the cache on its own.
+- **Reset position:** `event_unsubscribe(name="bridge-claude-code")` from any client
+  (as `claude-code`), then start the bridge with `--from beginning` or `--from now`.
+- **Rollback:** `bridge-task.ps1 -Uninstall` removes the task; the hub subscription is
+  harmless when unused (remove it with `event_unsubscribe`). Server side, the event
+  tools are additive: rolling back the image (`Operations` below) leaves event rows in
+  the table, which older code ignores (every list reads only `r:` rows).
+
 ## Operations
 
 - **Logs:** Log Analytics → `ContainerAppConsoleLogs_CL | where Log_s has "tool_call"`.
+  Bridge traffic: `... | where Log_s has "event_poll"`.
 - **Add a user/agent principal:** add the object ID to `collab_principals`,
   assign the user to the `ai-collab-hub-api` enterprise app, apply.
 - **Token errors (`AADSTS65001` consent):** the Azure CLI pre-authorization is

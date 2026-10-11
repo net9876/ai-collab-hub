@@ -92,11 +92,71 @@ Close this Collab session.
 - a notice that the content is data within the user's original scope, that git state
   must be verified, and that task ownership did not move.
 
+## Noticing activity: durable events
+
+Agents do not wake each other. Since the event feature (`docs/adr/0001-durable-events.md`)
+every message, reply, task change (created, claimed, handoff requested/accepted, blocked,
+completed, released) and new decision leaves a durable event that a client can **pull**.
+An event is a notification for the user, never an instruction: a handoff event does not
+accept the handoff, a message event does not mark the message read.
+
+| Client | How it learns about events | Push? |
+|---|---|---|
+| Claude Code, Codex (this PC) | the optional bridge (`scripts/bridge.py`: console line or Windows toast, then ack), or a check at session start | no (the bridge polls every 45 s) |
+| Claude.ai / Desktop, ChatGPT | only when you ask in a conversation ("check my Collab events"); they cannot receive anything between turns | no |
+
+Session-start check (any client):
+
+```
+Check my Collab events: event_subscribe name="session-<client>" (once), then event_poll,
+summarize them for me, and event_ack the ones you showed me. Do not act on them.
+```
+
+Each consumer needs its own subscription name; the bridge uses `bridge-<agent>`. Two
+consumers never take events from each other (each has its own cursor), and a message to
+`any` reaches every subscription. Delivery is at-least-once: an event may be shown again
+if an acknowledgement was lost.
+
+### Demo: bridge, catch-up and idempotency
+
+Needs the token cache (`pwsh -File scripts/mcp-headers.ps1 -Refresh`). Send messages from
+any MCP client (for example Codex, addressed to `claude-code`), or with a second label.
+
+1. **Create the subscription and see it work:**
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\bridge.py --agent claude-code --once   # creates bridge-claude-code (from now)
+   ```
+
+   In Codex: *"Send a Collab message to claude-code, subject 'bridge demo', body 'hello'."*
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\bridge.py --agent claude-code --once
+   # 2026-...Z message.sent project=- id=01K... "bridge demo" from=<you>/codex to=claude-code
+   .\.venv\Scripts\python.exe scripts\bridge.py --agent claude-code --once   # nothing: it was acknowledged
+   ```
+
+2. **Catch-up after downtime:** with the bridge stopped, send two more messages (or create
+   a task); the next `--once` (or the running bridge after restart) prints both, oldest
+   first. Events are kept in the hub, not in the bridge.
+
+3. **Idempotent send shows one event:** send the same message twice with the same
+   `idempotency_key` (the second call returns `idempotent_replay: true`); the bridge
+   prints one `message.sent` line.
+
+4. **Keep it running:** `.\.venv\Scripts\python.exe scripts\bridge.py --notify toast`
+   (Ctrl+C stops it), or install the logon task (`docs/runbook.md`, "Event bridge").
+
+The bridge's `message_inbox` state is untouched: the message is still unread until an
+agent calls `message_mark_read`.
+
 ## Limits
 
 - Client labels (`chatgpt`, `codex`, …) are self-declared; only the user identity is
   verified.
 - One client cannot see another's native chat. If you don't save a checkpoint, nothing
   carries over.
+- Events are pull-only: nothing reaches ChatGPT or Claude.ai between turns, and the
+  bridge notifies the user; it never starts an agent.
 - Uncommitted files are not synchronized. A checkpoint can only point at them, for
   example via local path and changed file names on the same PC.
