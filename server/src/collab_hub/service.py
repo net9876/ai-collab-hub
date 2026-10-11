@@ -61,6 +61,20 @@ def _pl(value: Any) -> list[str]:
     return list(json.loads(value))
 
 
+EVENT_SCHEMA_VERSION = 1
+EVENT_PAYLOAD_TITLE = 200
+
+
+def event_rk(event_id: str) -> str:
+    """Durable event row key: plain ULID, so ascending RowKey = chronological order."""
+    return f"x:{event_id}"
+
+
+def agent_of(actor: str) -> str:
+    """Agent label part of an 'alias/agent' actor (self-declared)."""
+    return actor.split("/", 1)[-1] if actor else ""
+
+
 def checkpoint_rk(session_id: str, seq: int) -> str:
     """Checkpoints live in the session partition: atomic with the session row."""
     return f"c:{session_id}:{seq:06d}"
@@ -191,8 +205,14 @@ class HubService:
         expected_revision: int | None,
         extra_ops: list[tuple[str, dict[str, Any], str | None]] | None = None,
         blob_name: str | None = None,
+        *,
+        history: bool = True,
     ) -> int:
-        """Bump revision and persist with If-Match; history row in the same transaction."""
+        """Bump revision and persist with If-Match; history row in the same transaction.
+
+        history=False skips the revision row (delivery bookkeeping such as subscription
+        cursors, which would otherwise add one history row per acknowledgement).
+        """
         current = int(row["revision"])
         if expected_revision is not None and expected_revision != current:
             if blob_name:
@@ -207,10 +227,9 @@ class HubService:
         row["updated_at"] = now()
         row["updated_by"] = p.actor
         pk = row["PartitionKey"]
-        ops: list[tuple[str, dict[str, Any], str | None]] = [
-            ("replace", row, etag),
-            ("create", self._revision_row(pk, key, row, change, p), None),
-        ]
+        ops: list[tuple[str, dict[str, Any], str | None]] = [("replace", row, etag)]
+        if history:
+            ops.append(("create", self._revision_row(pk, key, row, change, p), None))
         ops.extend(extra_ops or [])
         try:
             await self.store.transact(ops)
@@ -219,6 +238,47 @@ class HubService:
                 await self.store.delete_blob_quietly(blob_name)
             raise
         return current + 1
+
+    def _event(
+        self,
+        p: Principal,
+        kind: str,
+        event_type: str,
+        record_id: str,
+        revision: int,
+        project: str | None,
+        payload: dict[str, Any],
+        to_agent: str = "",
+    ) -> tuple[str, dict[str, Any], str | None]:
+        """Event row for the change being written, as an extra op of the SAME transaction.
+
+        Lives in the source record's partition, so it commits if and only if the change
+        commits. RowKey "x:<ULID>" is not inverted: ascending order is chronological.
+        The payload is a small, non-sensitive summary; never bodies, descriptions,
+        results, blockers, notes, checkpoints or credentials.
+        """
+        eid = str(ULID())
+        return (
+            "create",
+            {
+                "PartitionKey": partition(p.workspace, kind),
+                "RowKey": event_rk(eid),
+                "row_type": "event",
+                "schema_version": EVENT_SCHEMA_VERSION,
+                "event_id": eid,
+                "event_type": event_type,
+                "workspace": p.workspace,
+                "kind": kind,
+                "record_id": record_id,
+                "record_revision": revision,
+                "occurred_at": now(),
+                "actor": p.actor,
+                "to_agent": to_agent,
+                "project": project or "",
+                "payload": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            },
+            None,
+        )
 
     @staticmethod
     def _audit(row: dict[str, Any]) -> dict[str, Any]:
@@ -624,6 +684,21 @@ class HubService:
             "decision": decision,
             "supersedes": supersedes,
         }
+        extra.append(
+            self._event(
+                p,
+                "decision",
+                "decision.created",
+                did,
+                1,
+                project,
+                {
+                    "title": title[:EVENT_PAYLOAD_TITLE],
+                    "status": status,
+                    "supersedes": supersedes,
+                },
+            )
+        )
         return await self._create(
             p, "decision", did, row, "decision_add", idempotency_key, request, extra_ops=extra
         )
@@ -702,6 +777,26 @@ class HubService:
         for key in ("handoff_to", "handoff_from", "handoff_note", "handoff_checkpoint"):
             row[key] = ""
 
+    def _task_event(
+        self, p: Principal, row: dict[str, Any], event_type: str, to_agent: str = "", **extra: Any
+    ) -> tuple[str, dict[str, Any], str | None]:
+        """Event for a task change about to be saved with _save (revision + 1)."""
+        payload = {
+            "title": str(row["title"])[:EVENT_PAYLOAD_TITLE],
+            "status": row["status"],
+            **extra,
+        }
+        return self._event(
+            p,
+            "task",
+            event_type,
+            row["record_id"],
+            int(row["revision"]) + 1,
+            row["project"],
+            payload,
+            to_agent=to_agent,
+        )
+
     async def task_handoff(
         self,
         p: Principal,
@@ -746,7 +841,20 @@ class HubService:
         if evidence:
             merged = list(dict.fromkeys(_pl(row.get("evidence")) + evidence))
             row["evidence"] = _jl(merged[-40:])
-        rev = await self._save(p, "task", task_id, row, change, expected_revision)
+        events = []
+        if to_agent is not None:
+            events.append(
+                self._task_event(
+                    p,
+                    row,
+                    "task.handoff_requested",
+                    to_agent=to_agent,
+                    handoff_to=to_agent,
+                    handoff_from=p.actor,
+                    checkpoint_id=checkpoint_id,
+                )
+            )
+        rev = await self._save(p, "task", task_id, row, change, expected_revision, extra_ops=events)
         row.update(revision=rev, updated_by=p.actor)
         return self._task(row)
 
@@ -771,6 +879,14 @@ class HubService:
         row["claimed_by"] = p.actor
         row["claimed_at"] = now()
         self._clear_handoff(row)
+        event = self._task_event(
+            p,
+            row,
+            "task.accepted",
+            to_agent=agent_of(previous),
+            claimed_by=p.actor,
+            previous_owner=previous or None,
+        )
         try:
             rev = await self._save(
                 p,
@@ -779,6 +895,7 @@ class HubService:
                 row,
                 f"handoff accepted: {previous} -> {p.actor}",
                 expected_revision,
+                extra_ops=[event],
             )
         except HubError as err:
             if err.code == "conflict":
@@ -826,7 +943,18 @@ class HubService:
             "priority": priority,
             "labels": labels,
         }
-        return await self._create(p, "task", tid, row, "task_create", idempotency_key, request)
+        event = self._event(
+            p,
+            "task",
+            "task.created",
+            tid,
+            1,
+            project,
+            {"title": title[:EVENT_PAYLOAD_TITLE], "status": "open", "priority": priority},
+        )
+        return await self._create(
+            p, "task", tid, row, "task_create", idempotency_key, request, extra_ops=[event]
+        )
 
     async def task_get(self, p: Principal, task_id: str) -> Task:
         require(self.s, p, write=False)
@@ -876,8 +1004,9 @@ class HubService:
         row["status"] = "in_progress"
         row["claimed_by"] = p.actor
         row["claimed_at"] = now()
+        event = self._task_event(p, row, "task.claimed", claimed_by=p.actor)
         try:
-            rev = await self._save(p, "task", task_id, row, "claimed", None)
+            rev = await self._save(p, "task", task_id, row, "claimed", None, extra_ops=[event])
         except HubError as err:
             if err.code == "conflict":
                 raise conflict(
@@ -915,7 +1044,9 @@ class HubService:
         if labels is not None:
             row["labels"] = _jl(labels)
         change = "updated"
+        released_from: str | None = None
         if release:
+            released_from = row.get("claimed_by") or ""
             row["status"], row["claimed_by"], row["claimed_at"] = "open", "", ""
             row["blocker"] = ""
             self._clear_handoff(row)
@@ -941,7 +1072,12 @@ class HubService:
         row["search_text"] = normalize(
             f"{row['title']} {row.get('description', '')} {' '.join(_pl(row.get('labels')))}"
         )
-        rev = await self._save(p, "task", task_id, row, change, expected_revision)
+        events = []
+        if released_from is not None and row["status"] == "open":  # not "cancelled"
+            events.append(
+                self._task_event(p, row, "task.released", previous_owner=released_from or None)
+            )
+        rev = await self._save(p, "task", task_id, row, change, expected_revision, extra_ops=events)
         row.update(revision=rev, updated_by=p.actor)
         return self._task(row)
 
@@ -972,7 +1108,11 @@ class HubService:
         row.update(fields)
         if status == "done":
             self._clear_handoff(row)
-        rev = await self._save(p, "task", task_id, row, change, expected_revision)
+        event_type = "task.completed" if status == "done" else "task.blocked"
+        event = self._task_event(p, row, event_type, claimed_by=p.actor)
+        rev = await self._save(
+            p, "task", task_id, row, change, expected_revision, extra_ops=[event]
+        )
         row.update(revision=rev, updated_by=p.actor)
         return self._task(row)
 
@@ -1048,7 +1188,23 @@ class HubService:
             "project": project,
             "reply_to": reply_to,
         }
-        return await self._create(p, "message", mid, row, tool, idempotency_key, request)
+        event = self._event(
+            p,
+            "message",
+            "message.replied" if reply_to else "message.sent",
+            mid,
+            1,
+            project,
+            {
+                "subject": subject[:EVENT_PAYLOAD_TITLE],
+                "thread_id": thread_id or mid,
+                "reply_to": reply_to,
+            },
+            to_agent=to_agent,
+        )
+        return await self._create(
+            p, "message", mid, row, tool, idempotency_key, request, extra_ops=[event]
+        )
 
     async def message_reply(
         self, p: Principal, message_id: str, body: str, idempotency_key: str | None

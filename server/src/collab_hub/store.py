@@ -9,6 +9,9 @@ Layout (one table, one blob container):
                             ascending RowKey order means newest first)
 * RowKey "v:<id>:<rev>"     immutable revision (history) row
 * RowKey "i:<hash>"         idempotency row for create calls
+* RowKey "x:<ULID>"         durable event (task/message/decision partitions); plain,
+                            not inverted, so ascending RowKey order is chronological.
+                            Written in the same transaction as the change it reports.
 
 Because a record, its revision row and its idempotency row share a partition,
 every mutation is a single entity-group transaction: all rows commit or none
@@ -58,8 +61,12 @@ def invert_ulid(ulid: str) -> str:
     return ulid.translate(_INVERT)
 
 
+# Kinds whose record key is a natural key stored verbatim (not an inverted ULID).
+NATURAL_KEY_KINDS = frozenset({"project", "subscription"})
+
+
 def record_rk(kind: str, key: str) -> str:
-    return "r:" + (key if kind == "project" else invert_ulid(key))
+    return "r:" + (key if kind in NATURAL_KEY_KINDS else invert_ulid(key))
 
 
 def revision_rk(key: str, revision: int) -> str:
@@ -332,14 +339,27 @@ class Store:
                 break
         return out
 
-    # --- blobs ------------------------------------------------------------
-
     @storage_errors
-    async def list_between(self, pk: str, low: str, high: str, limit: int) -> list[dict[str, Any]]:
-        """Rows with low <= RowKey <= high, ascending, at most `limit`."""
+    async def list_between(
+        self,
+        pk: str,
+        low: str,
+        high: str,
+        limit: int,
+        extra_filter: str | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Rows with low <= RowKey <= high, ascending, at most `limit`.
+
+        `extra_filter` is an OData clause with @params evaluated by the table service,
+        so rows it rejects do not count against `limit`.
+        """
+        query = "PartitionKey eq @pk and RowKey ge @a and RowKey le @b"
+        if extra_filter:
+            query += f" and ( {extra_filter} )"  # SDK needs spaces around @params
         pager = self.table.query_entities(
-            "PartitionKey eq @pk and RowKey ge @a and RowKey le @b",
-            parameters={"pk": pk, "a": low, "b": high},
+            query,
+            parameters={**(params or {}), "pk": pk, "a": low, "b": high},
             results_per_page=min(limit, 100),
         )
         out: list[dict[str, Any]] = []
@@ -348,6 +368,8 @@ class Store:
             if len(out) >= limit:
                 break
         return out
+
+    # --- blobs ------------------------------------------------------------
 
     @storage_errors
     async def put_blob(
